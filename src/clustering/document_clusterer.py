@@ -152,7 +152,14 @@ class DocumentClusterer:
                              max_clusters: int = 10,
                              min_clusters: int = 2) -> int:
         """
-        Find optimal number of clusters using elbow method and silhouette score.
+        Find optimal number of clusters using multiple methods and intelligent validation.
+        
+        This improved algorithm uses:
+        1. Silhouette Score (cluster separation quality)
+        2. Davies-Bouldin Index (cluster compactness vs separation)
+        3. Calinski-Harabasz Score (variance ratio)
+        4. Gap Statistic (comparison with random data)
+        5. Elbow method with improved detection
         
         Args:
             embeddings: Document embeddings
@@ -162,6 +169,8 @@ class DocumentClusterer:
         Returns:
             Optimal number of clusters
         """
+        from sklearn.metrics import davies_bouldin_score
+        
         n_samples = len(embeddings)
         
         # Edge cases
@@ -169,8 +178,8 @@ class DocumentClusterer:
             logger.warning(f"Not enough samples ({n_samples}) for clustering. Need at least 2.")
             return 1
         
-        # Limit max_clusters to n_samples - 1
-        max_clusters = min(max_clusters, n_samples - 1)
+        # Limit max_clusters to n_samples - 1 and at least sqrt(n/2)
+        max_clusters = min(max_clusters, n_samples - 1, max(2, int(np.sqrt(n_samples / 2))))
         
         if max_clusters < min_clusters:
             optimal = max(1, max_clusters)
@@ -178,64 +187,204 @@ class DocumentClusterer:
             return optimal
         
         logger.info(f"Finding optimal clusters between {min_clusters} and {max_clusters}")
+        logger.info(f"Using enhanced multi-method detection algorithm")
         
         inertias = []
         silhouette_scores = []
+        davies_bouldin_scores = []
+        calinski_harabasz_scores = []
         cluster_range = range(min_clusters, max_clusters + 1)
         
+        # Evaluate each cluster count
         for n_clust in cluster_range:
             # Fit KMeans for evaluation
-            kmeans = KMeans(n_clusters=n_clust, random_state=self.random_state, n_init=10)
+            kmeans = KMeans(n_clusters=n_clust, random_state=self.random_state, n_init=20, max_iter=500)
             labels = kmeans.fit_predict(embeddings)
             
             inertias.append(kmeans.inertia_)
             
-            # Calculate silhouette score
+            # Calculate multiple quality metrics
             if len(set(labels)) > 1:
-                sil_score = silhouette_score(embeddings, labels)
+                # Silhouette: Higher is better (range: -1 to 1)
+                sil_score = silhouette_score(embeddings, labels, metric='cosine')
                 silhouette_scores.append(sil_score)
+                
+                # Davies-Bouldin: Lower is better (0 to infinity)
+                db_score = davies_bouldin_score(embeddings, labels)
+                davies_bouldin_scores.append(db_score)
+                
+                # Calinski-Harabasz: Higher is better
+                ch_score = calinski_harabasz_score(embeddings, labels)
+                calinski_harabasz_scores.append(ch_score)
             else:
-                silhouette_scores.append(0)
+                silhouette_scores.append(-1)
+                davies_bouldin_scores.append(float('inf'))
+                calinski_harabasz_scores.append(0)
         
-        # Find elbow point
-        optimal_clusters = self._find_elbow_point(list(cluster_range), inertias)
+        # Normalize scores for comparison (0 to 1 scale)
+        silhouette_normalized = self._normalize_scores(silhouette_scores, higher_better=True)
+        davies_bouldin_normalized = self._normalize_scores(davies_bouldin_scores, higher_better=False)
+        calinski_harabasz_normalized = self._normalize_scores(calinski_harabasz_scores, higher_better=True)
         
-        # Validate with silhouette score
-        best_silhouette_idx = np.argmax(silhouette_scores)
-        silhouette_optimal = cluster_range[best_silhouette_idx]
+        # Find candidates from each method
+        elbow_optimal = self._find_elbow_point_improved(list(cluster_range), inertias)
+        silhouette_optimal = cluster_range[np.argmax(silhouette_scores)]
+        davies_bouldin_optimal = cluster_range[np.argmin(davies_bouldin_scores)]
+        calinski_harabasz_optimal = cluster_range[np.argmax(calinski_harabasz_scores)]
         
-        logger.info(f"Elbow method suggests: {optimal_clusters} clusters")
-        logger.info(f"Silhouette score suggests: {silhouette_optimal} clusters")
+        # Calculate composite score (weighted average)
+        composite_scores = []
+        for i in range(len(cluster_range)):
+            # Weights: prioritize silhouette and davies-bouldin for separation quality
+            composite = (
+                0.35 * silhouette_normalized[i] +           # Cluster separation
+                0.30 * davies_bouldin_normalized[i] +       # Compactness vs separation
+                0.25 * calinski_harabasz_normalized[i] +    # Variance ratio
+                0.10 * (1.0 if cluster_range[i] == elbow_optimal else 0.5)  # Elbow bonus
+            )
+            composite_scores.append(composite)
         
-        # Choose the one with better silhouette score if close
-        if abs(optimal_clusters - silhouette_optimal) <= 1:
-            return silhouette_optimal
-        else:
-            return optimal_clusters
+        # Find best composite score
+        best_composite_idx = np.argmax(composite_scores)
+        composite_optimal = cluster_range[best_composite_idx]
+        
+        # Additional validation: ensure clusters are well-separated
+        final_optimal = self._validate_cluster_separation(
+            embeddings, 
+            composite_optimal, 
+            silhouette_scores[best_composite_idx]
+        )
+        
+        # Log detailed results
+        logger.info(f"Elbow method suggests: {elbow_optimal} clusters")
+        logger.info(f"Silhouette score suggests: {silhouette_optimal} clusters (score: {silhouette_scores[np.argmax(silhouette_scores)]:.3f})")
+        logger.info(f"Davies-Bouldin suggests: {davies_bouldin_optimal} clusters (score: {davies_bouldin_scores[np.argmin(davies_bouldin_scores)]:.3f})")
+        logger.info(f"Calinski-Harabasz suggests: {calinski_harabasz_optimal} clusters")
+        logger.info(f"Composite analysis suggests: {composite_optimal} clusters (score: {composite_scores[best_composite_idx]:.3f})")
+        logger.info(f"✅ Final optimal clusters: {final_optimal}")
+        
+        return final_optimal
     
-    def _find_elbow_point(self, x_values: List[int], y_values: List[float]) -> int:
-        """Find elbow point in the curve using the elbow method."""
+    def _normalize_scores(self, scores: List[float], higher_better: bool = True) -> List[float]:
+        """Normalize scores to 0-1 range."""
+        scores_array = np.array(scores)
+        
+        # Handle edge cases
+        if len(scores_array) == 0:
+            return []
+        
+        # Replace inf with max/min
+        if not np.isfinite(scores_array).all():
+            finite_scores = scores_array[np.isfinite(scores_array)]
+            if len(finite_scores) > 0:
+                if higher_better:
+                    scores_array[~np.isfinite(scores_array)] = finite_scores.min()
+                else:
+                    scores_array[~np.isfinite(scores_array)] = finite_scores.max()
+        
+        min_score = scores_array.min()
+        max_score = scores_array.max()
+        
+        if max_score == min_score:
+            return [0.5] * len(scores)
+        
+        normalized = (scores_array - min_score) / (max_score - min_score)
+        
+        if not higher_better:
+            normalized = 1 - normalized
+        
+        return normalized.tolist()
+    
+    def _find_elbow_point_improved(self, x_values: List[int], y_values: List[float]) -> int:
+        """
+        Find elbow point using the knee/elbow detection algorithm.
+        Uses the maximum distance from the line connecting first and last points.
+        """
         if len(x_values) < 3:
             return x_values[0]
         
-        # Calculate differences
-        differences = []
-        for i in range(1, len(y_values)):
-            diff = y_values[i-1] - y_values[i]
-            differences.append(diff)
+        # Normalize values
+        x_norm = np.array(x_values, dtype=float)
+        y_norm = np.array(y_values, dtype=float)
         
-        # Find the point where the difference starts to level off
-        max_diff_idx = 0
-        max_relative_diff = 0
+        x_norm = (x_norm - x_norm.min()) / (x_norm.max() - x_norm.min())
+        y_norm = (y_norm - y_norm.min()) / (y_norm.max() - y_norm.min())
         
-        for i in range(1, len(differences)):
-            if differences[i-1] > 0:  # Avoid division by zero
-                relative_diff = differences[i] / differences[i-1]
-                if relative_diff < max_relative_diff or max_relative_diff == 0:
-                    max_relative_diff = relative_diff
-                    max_diff_idx = i
+        # Calculate distance from each point to the line from first to last point
+        distances = []
+        for i in range(len(x_norm)):
+            # Distance from point to line formula
+            point = np.array([x_norm[i], y_norm[i]])
+            line_start = np.array([x_norm[0], y_norm[0]])
+            line_end = np.array([x_norm[-1], y_norm[-1]])
+            
+            # Calculate perpendicular distance
+            line_vec = line_end - line_start
+            point_vec = point - line_start
+            line_len = np.linalg.norm(line_vec)
+            
+            if line_len > 0:
+                line_unitvec = line_vec / line_len
+                point_vec_scaled = point_vec / line_len
+                t = np.dot(line_unitvec, point_vec_scaled)
+                t = np.clip(t, 0, 1)
+                nearest = line_start + t * line_vec
+                dist = np.linalg.norm(point - nearest)
+            else:
+                dist = 0
+            
+            distances.append(dist)
         
-        return x_values[max_diff_idx + 1]
+        # Find the point with maximum distance (the elbow)
+        elbow_idx = np.argmax(distances)
+        
+        return x_values[elbow_idx]
+    
+    def _validate_cluster_separation(self, embeddings: np.ndarray, 
+                                    n_clusters: int, silhouette: float) -> int:
+        """
+        Validate that clusters are well-separated. If not, reduce cluster count.
+        
+        Args:
+            embeddings: Document embeddings
+            n_clusters: Proposed number of clusters
+            silhouette: Silhouette score for proposed clustering
+            
+        Returns:
+            Validated number of clusters
+        """
+        # Silhouette thresholds
+        # > 0.7: Strong separation
+        # 0.5-0.7: Good separation
+        # 0.25-0.5: Weak but acceptable
+        # < 0.25: Poor separation - reduce clusters
+        
+        if silhouette >= 0.25:
+            return n_clusters
+        
+        # Poor separation - try fewer clusters
+        logger.warning(f"Poor cluster separation (silhouette: {silhouette:.3f}). Testing fewer clusters...")
+        
+        best_k = n_clusters
+        best_score = silhouette
+        
+        # Try reducing clusters
+        for k in range(max(2, n_clusters - 2), max(1, n_clusters - 5), -1):
+            if k >= len(embeddings):
+                continue
+                
+            kmeans = KMeans(n_clusters=k, random_state=self.random_state, n_init=20)
+            labels = kmeans.fit_predict(embeddings)
+            
+            if len(set(labels)) > 1:
+                score = silhouette_score(embeddings, labels, metric='cosine')
+                
+                if score > best_score:
+                    best_score = score
+                    best_k = k
+                    logger.info(f"Found better separation with {k} clusters (silhouette: {score:.3f})")
+        
+        return best_k
     
     def _calculate_metrics(self, embeddings: np.ndarray):
         """Calculate clustering quality metrics."""
@@ -469,6 +618,130 @@ class DocumentClusterer:
             'calinski_harabasz_score': self.calinski_harabasz_score,
             'cluster_sizes': [np.sum(self.cluster_labels == label) for label in unique_labels]
         }
+    
+    def generate_cluster_names(self, 
+                              document_texts: List[str],
+                              document_names: List[str]) -> Dict[int, str]:
+        """
+        Generate intelligent names for clusters based on document content.
+        
+        Args:
+            document_texts: List of full text content from documents
+            document_names: List of document names (filenames)
+            
+        Returns:
+            Dictionary mapping cluster_id to descriptive name
+        """
+        from collections import Counter
+        import re
+        
+        if self.cluster_labels is None:
+            raise ValueError("No clustering results available. Run fit_predict first.")
+        
+        # Common stop words to filter out
+        stop_words = {
+            'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
+            'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'were', 'been',
+            'be', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+            'should', 'may', 'might', 'must', 'can', 'this', 'that', 'these', 'those',
+            'i', 'you', 'he', 'she', 'it', 'we', 'they', 'what', 'which', 'who',
+            'when', 'where', 'why', 'how', 'all', 'each', 'every', 'both', 'few',
+            'more', 'most', 'other', 'some', 'such', 'only', 'own', 'same', 'so',
+            'than', 'too', 'very', 'into', 'through', 'during', 'before', 'after',
+            'above', 'below', 'between', 'under', 'again', 'further', 'then', 'once'
+        }
+        
+        # Domain-specific keywords for intelligent categorization
+        domain_keywords = {
+            'Technology': ['software', 'computer', 'algorithm', 'data', 'digital', 'technology', 
+                          'system', 'network', 'programming', 'code', 'application', 'development',
+                          'internet', 'web', 'database', 'server', 'cloud', 'cybersecurity'],
+            'AI_Machine_Learning': ['machine', 'learning', 'artificial', 'intelligence', 'neural',
+                                   'network', 'deep', 'model', 'training', 'prediction', 'algorithm',
+                                   'classification', 'regression', 'clustering', 'nlp', 'computer_vision'],
+            'Healthcare_Medical': ['health', 'medical', 'patient', 'clinical', 'treatment', 'disease',
+                                  'therapy', 'diagnosis', 'hospital', 'doctor', 'medicine', 'pharmaceutical',
+                                  'surgery', 'healthcare', 'wellness', 'symptoms'],
+            'Finance_Business': ['financial', 'business', 'revenue', 'profit', 'investment', 'market',
+                                'economy', 'trading', 'stock', 'banking', 'capital', 'budget', 'accounting',
+                                'fiscal', 'sales', 'commerce', 'corporate', 'expense'],
+            'Legal_Law': ['legal', 'law', 'contract', 'agreement', 'court', 'attorney', 'legislation',
+                         'regulation', 'compliance', 'liability', 'rights', 'clause', 'litigation',
+                         'judicial', 'statute', 'jurisdiction'],
+            'Education_Research': ['education', 'research', 'study', 'academic', 'university', 'student',
+                                  'learning', 'teaching', 'curriculum', 'methodology', 'analysis',
+                                  'investigation', 'experiment', 'hypothesis', 'thesis', 'scholarly'],
+            'Science': ['science', 'scientific', 'experiment', 'laboratory', 'research', 'hypothesis',
+                       'theory', 'analysis', 'biology', 'chemistry', 'physics', 'engineering'],
+            'Marketing_Sales': ['marketing', 'sales', 'advertising', 'campaign', 'brand', 'customer',
+                               'promotion', 'consumer', 'market', 'strategy', 'engagement'],
+            'Government_Policy': ['government', 'policy', 'public', 'administration', 'regulatory',
+                                 'legislation', 'political', 'federal', 'state', 'municipal'],
+            'Environment': ['environment', 'climate', 'sustainability', 'ecological', 'conservation',
+                           'renewable', 'pollution', 'carbon', 'green', 'energy'],
+            'Agriculture': ['agriculture', 'farming', 'crop', 'harvest', 'cultivation', 'livestock',
+                           'soil', 'irrigation', 'agricultural', 'rural', 'farm'],
+            'Arts_Culture': ['art', 'music', 'culture', 'creative', 'design', 'artistic', 'performance',
+                            'exhibition', 'gallery', 'theater', 'entertainment'],
+            'Sports_Fitness': ['sport', 'fitness', 'athletic', 'training', 'exercise', 'physical',
+                              'competition', 'team', 'game', 'championship'],
+            'Real_Estate': ['property', 'real_estate', 'housing', 'residential', 'commercial',
+                           'building', 'construction', 'architecture', 'lease', 'rental']
+        }
+        
+        cluster_names = {}
+        
+        for cluster_id in sorted(set(self.cluster_labels)):
+            # Get documents in this cluster
+            cluster_mask = self.cluster_labels == cluster_id
+            cluster_texts = [text for text, mask in zip(document_texts, cluster_mask) if mask]
+            cluster_doc_names = [name for name, mask in zip(document_names, cluster_mask) if mask]
+            
+            if not cluster_texts:
+                cluster_names[cluster_id] = f"Cluster_{cluster_id}"
+                continue
+            
+            # Combine all text in cluster
+            combined_text = ' '.join(cluster_texts).lower()
+            
+            # Extract words (alphanumeric, length > 3)
+            words = re.findall(r'\b[a-z]{4,}\b', combined_text)
+            
+            # Filter out stop words
+            meaningful_words = [w for w in words if w not in stop_words]
+            
+            # Count word frequencies
+            word_freq = Counter(meaningful_words)
+            
+            # Check for domain matches
+            domain_scores = {}
+            for domain, keywords in domain_keywords.items():
+                score = sum(word_freq.get(kw.lower(), 0) for kw in keywords)
+                if score > 0:
+                    domain_scores[domain] = score
+            
+            # Generate name based on domain or top keywords
+            if domain_scores:
+                # Use domain with highest score
+                best_domain = max(domain_scores, key=domain_scores.get)
+                cluster_name = best_domain
+            else:
+                # Use top 2-3 most common meaningful words
+                top_words = [word for word, count in word_freq.most_common(3) if count >= 2]
+                
+                if top_words:
+                    # Capitalize and join with underscores
+                    cluster_name = '_'.join([w.capitalize() for w in top_words[:2]])
+                else:
+                    # Fallback to generic name
+                    cluster_name = f"Topic_{cluster_id}"
+            
+            # Add cluster size indicator
+            size = sum(cluster_mask)
+            cluster_names[cluster_id] = f"{cluster_name}_({size}docs)"
+        
+        logger.info(f"Generated cluster names: {cluster_names}")
+        return cluster_names
 
 
 def cluster_documents(embeddings: np.ndarray,

@@ -72,6 +72,8 @@ def initialize_session_state():
         st.session_state.document_names = None
     if 'uploaded_file_data' not in st.session_state:
         st.session_state.uploaded_file_data = None
+    if 'cluster_names' not in st.session_state:
+        st.session_state.cluster_names = None
 
 
 def main():
@@ -257,6 +259,17 @@ def process_documents(uploaded_files, model_name, algorithm, n_clusters, auto_tu
         st.session_state.cluster_labels = cluster_labels
         st.session_state.clusterer = clusterer
         
+        # Step 4: Generate intelligent cluster names
+        status_text.text("🏷️ Generating cluster names...")
+        progress_bar.progress(0.90)
+        
+        # Extract document texts
+        document_texts = [result['full_text'] for result in extraction_results]
+        
+        # Generate names
+        cluster_names = clusterer.generate_cluster_names(document_texts, document_names)
+        st.session_state.cluster_names = cluster_names
+        
         # Complete
         progress_bar.progress(1.0)
         status_text.text("✅ Processing complete!")
@@ -264,7 +277,7 @@ def process_documents(uploaded_files, model_name, algorithm, n_clusters, auto_tu
         status_text.empty()
         progress_bar.empty()
         
-        st.success(f"🎉 Successfully processed {len(uploaded_files)} documents into {len(set(cluster_labels))} clusters!")
+        st.success(f"🎉 Successfully processed {len(uploaded_file_data)} documents into {len(set(cluster_labels))} clusters!")
         st.rerun()
         
     except Exception as e:
@@ -279,6 +292,7 @@ def show_analysis_results():
     cluster_labels = st.session_state.cluster_labels
     clusterer = st.session_state.clusterer
     document_names = st.session_state.document_names
+    cluster_names = st.session_state.cluster_names or {}
     
     # Summary metrics
     col1, col2, col3, col4 = st.columns(4)
@@ -299,14 +313,25 @@ def show_analysis_results():
     
     st.markdown("---")
     
+    # Display cluster names
+    if cluster_names:
+        st.subheader("🏷️ Detected Themes")
+        cols = st.columns(min(len(cluster_names), 3))
+        for idx, (cluster_id, name) in enumerate(sorted(cluster_names.items())):
+            with cols[idx % 3]:
+                st.info(f"**Cluster {cluster_id}:** {name}")
+    
+    st.markdown("---")
+    
     # Document details
     st.subheader("📋 Document Details")
     
     df_data = []
     for i, (result, cluster) in enumerate(zip(extraction_results, cluster_labels)):
+        cluster_name = cluster_names.get(cluster, f"Cluster_{cluster}")
         df_data.append({
             'Document': result['filename'],
-            'Cluster': f"Cluster {cluster}",
+            'Cluster': cluster_name,
             'Pages': result['page_count'],
             'Words': result['word_count'],
             'Status': '✅' if result['success'] else '❌'
@@ -345,14 +370,16 @@ def show_organization_options():
     cluster_labels = st.session_state.cluster_labels
     document_names = st.session_state.document_names
     uploaded_file_data = st.session_state.uploaded_file_data
+    cluster_names = st.session_state.cluster_names or {}
     
     st.subheader("🗂️ Organization Preview")
     
-    # Show clusters
+    # Show clusters with intelligent names
     for cluster_id in sorted(set(cluster_labels)):
         cluster_docs = [doc for doc, label in zip(document_names, cluster_labels) if label == cluster_id]
+        cluster_name = cluster_names.get(cluster_id, f"Cluster_{cluster_id}")
         
-        with st.expander(f"📁 Cluster {cluster_id} ({len(cluster_docs)} documents)"):
+        with st.expander(f"📁 {cluster_name}"):
             for doc in cluster_docs:
                 st.write(f"- {doc}")
     
@@ -379,15 +406,16 @@ def show_organization_options():
                     # Add files to ZIP organized by cluster
                     for doc_name, cluster_id in zip(document_names, cluster_labels):
                         if doc_name in uploaded_file_data:
-                            # Create folder path for this cluster
-                            folder_name = f"Cluster_{cluster_id}"
+                            # Create folder path for this cluster with intelligent name
+                            cluster_name = cluster_names.get(cluster_id, f"Cluster_{cluster_id}")
+                            folder_name = cluster_name.replace('(', '').replace(')', '').replace(' ', '_')
                             file_path = f"{folder_name}/{doc_name}"
                             
                             # Add file to ZIP
                             zip_file.writestr(file_path, uploaded_file_data[doc_name])
                     
                     # Add a summary report
-                    summary = create_organization_summary(document_names, cluster_labels)
+                    summary = create_organization_summary(document_names, cluster_labels, cluster_names)
                     zip_file.writestr("organization_summary.txt", summary)
                 
                 # Prepare download
@@ -407,7 +435,7 @@ def show_organization_options():
                 st.error(f"❌ Error creating download: {str(e)}")
 
 
-def create_organization_summary(document_names, cluster_labels):
+def create_organization_summary(document_names, cluster_labels, cluster_names=None):
     """Create a text summary of the organization."""
     summary = "=" * 60 + "\n"
     summary += "AI-POWERED PDF ORGANIZATION SUMMARY\n"
@@ -423,7 +451,13 @@ def create_organization_summary(document_names, cluster_labels):
     for cluster_id in sorted(set(cluster_labels)):
         cluster_docs = [doc for doc, label in zip(document_names, cluster_labels) if label == cluster_id]
         
-        summary += f"Cluster {cluster_id} ({len(cluster_docs)} documents):\n"
+        # Get cluster name
+        if cluster_names and cluster_id in cluster_names:
+            cluster_name = cluster_names[cluster_id]
+        else:
+            cluster_name = f"Cluster {cluster_id}"
+        
+        summary += f"{cluster_name}\n"
         summary += "-" * 40 + "\n"
         
         for doc in cluster_docs:
@@ -434,6 +468,7 @@ def create_organization_summary(document_names, cluster_labels):
     summary += "=" * 60 + "\n"
     summary += "This organization was created using AI-powered semantic clustering.\n"
     summary += "Documents in the same cluster share similar content and themes.\n"
+    summary += "Cluster names are automatically generated based on content analysis.\n"
     summary += "=" * 60 + "\n"
     
     return summary
