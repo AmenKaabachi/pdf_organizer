@@ -623,16 +623,23 @@ class DocumentClusterer:
                               document_texts: List[str],
                               document_names: List[str]) -> Dict[int, str]:
         """
-        Generate intelligent names for clusters based on document content.
+        Generate intelligent names for clusters with confidence scoring and purity detection.
+        
+        Enhanced version that:
+        - Uses TF-IDF for better keyword extraction
+        - Detects per-document domains to calculate cluster purity
+        - Identifies mixed clusters and outliers
+        - Provides confidence scores for cluster naming
         
         Args:
             document_texts: List of full text content from documents
             document_names: List of document names (filenames)
             
         Returns:
-            Dictionary mapping cluster_id to descriptive name
+            Dictionary mapping cluster_id to descriptive name with metadata
         """
         from collections import Counter
+        from sklearn.feature_extraction.text import TfidfVectorizer
         import re
         
         if self.cluster_labels is None:
@@ -701,46 +708,111 @@ class DocumentClusterer:
                 cluster_names[cluster_id] = f"Cluster_{cluster_id}"
                 continue
             
-            # Combine all text in cluster
-            combined_text = ' '.join(cluster_texts).lower()
-            
-            # Extract words (alphanumeric, length > 3)
-            words = re.findall(r'\b[a-z]{4,}\b', combined_text)
-            
-            # Filter out stop words
-            meaningful_words = [w for w in words if w not in stop_words]
-            
-            # Count word frequencies
-            word_freq = Counter(meaningful_words)
-            
-            # Check for domain matches
-            domain_scores = {}
-            for domain, keywords in domain_keywords.items():
-                score = sum(word_freq.get(kw.lower(), 0) for kw in keywords)
-                if score > 0:
-                    domain_scores[domain] = score
-            
-            # Generate name based on domain or top keywords
-            if domain_scores:
-                # Use domain with highest score
-                best_domain = max(domain_scores, key=domain_scores.get)
-                cluster_name = best_domain
-            else:
-                # Use top 2-3 most common meaningful words
-                top_words = [word for word, count in word_freq.most_common(3) if count >= 2]
+            # STEP 1: Detect domain for EACH document individually
+            doc_domains = []
+            for doc_text in cluster_texts:
+                doc_text_lower = doc_text.lower()
+                words = re.findall(r'\b[a-z]{4,}\b', doc_text_lower)
+                meaningful_words = [w for w in words if w not in stop_words]
+                word_freq = Counter(meaningful_words)
                 
-                if top_words:
-                    # Capitalize and join with underscores
-                    cluster_name = '_'.join([w.capitalize() for w in top_words[:2]])
+                # Score each domain for this document
+                doc_domain_scores = {}
+                for domain, keywords in domain_keywords.items():
+                    score = sum(word_freq.get(kw.lower(), 0) for kw in keywords)
+                    if score > 0:
+                        doc_domain_scores[domain] = score
+                
+                # Assign best domain or 'Unknown'
+                if doc_domain_scores:
+                    best_doc_domain = max(doc_domain_scores, key=doc_domain_scores.get)
+                    doc_domains.append(best_doc_domain)
                 else:
-                    # Fallback to generic name
-                    cluster_name = f"Topic_{cluster_id}"
+                    doc_domains.append('Unknown')
             
-            # Add cluster size indicator
+            # STEP 2: Calculate cluster purity (how many docs share the dominant domain)
+            domain_counts = Counter(doc_domains)
+            total_docs = len(doc_domains)
+            
+            if domain_counts:
+                dominant_domain = domain_counts.most_common(1)[0][0]
+                dominant_count = domain_counts[dominant_domain]
+                purity_score = (dominant_count / total_docs) * 100
+            else:
+                dominant_domain = 'Unknown'
+                purity_score = 0
+            
+            # STEP 3: Use TF-IDF for better keyword extraction
+            try:
+                if len(cluster_texts) >= 2:
+                    # TF-IDF across documents in cluster
+                    tfidf = TfidfVectorizer(
+                        max_features=10, 
+                        stop_words='english',
+                        min_df=1,
+                        ngram_range=(1, 2)
+                    )
+                    tfidf_matrix = tfidf.fit_transform(cluster_texts)
+                    feature_names = tfidf.get_feature_names_out()
+                    
+                    # Get top TF-IDF keywords
+                    tfidf_scores = tfidf_matrix.sum(axis=0).A1
+                    top_indices = tfidf_scores.argsort()[-5:][::-1]
+                    tfidf_keywords = [feature_names[i] for i in top_indices if len(feature_names[i]) > 3]
+                else:
+                    # Single document: use word frequency
+                    combined_text = cluster_texts[0].lower()
+                    words = re.findall(r'\b[a-z]{4,}\b', combined_text)
+                    meaningful_words = [w for w in words if w not in stop_words]
+                    word_freq = Counter(meaningful_words)
+                    tfidf_keywords = [word for word, count in word_freq.most_common(5)]
+            except Exception as e:
+                logger.warning(f"TF-IDF extraction failed for cluster {cluster_id}: {e}")
+                tfidf_keywords = []
+            
+            # STEP 4: Generate intelligent cluster name
             size = sum(cluster_mask)
-            cluster_names[cluster_id] = f"{cluster_name}_({size}docs)"
+            
+            # Determine if cluster is pure, mixed, or diverse
+            if purity_score >= 80:
+                # High purity - use dominant domain
+                cluster_name = f"{dominant_domain}_{size}docs"
+                quality_tag = ""
+            elif purity_score >= 60:
+                # Medium purity - show dominant with warning
+                cluster_name = f"{dominant_domain}_Mixed_{size}docs"
+                quality_tag = " ⚠️"
+            else:
+                # Low purity - show multiple domains or use TF-IDF keywords
+                top_domains = [dom for dom, count in domain_counts.most_common(2) if dom != 'Unknown']
+                
+                if len(top_domains) >= 2:
+                    cluster_name = f"{top_domains[0]}_{top_domains[1]}_{size}docs"
+                elif len(top_domains) == 1:
+                    cluster_name = f"{top_domains[0]}_Diverse_{size}docs"
+                elif tfidf_keywords:
+                    # Use TF-IDF keywords if no clear domain
+                    keyword_name = '_'.join([kw.capitalize().replace(' ', '') for kw in tfidf_keywords[:2]])
+                    cluster_name = f"{keyword_name}_{size}docs"
+                else:
+                    cluster_name = f"Mixed_Topics_{size}docs"
+                
+                quality_tag = " ⚠️⚠️"
+            
+            # STEP 5: Add metadata for logging
+            cluster_names[cluster_id] = cluster_name + quality_tag
+            
+            # Log detailed information
+            logger.info(f"Cluster {cluster_id}: '{cluster_name}' | Purity: {purity_score:.1f}%")
+            logger.info(f"  └─ Domain distribution: {dict(domain_counts)}")
+            if purity_score < 80:
+                # Identify potential outliers
+                outlier_docs = [doc_name for doc_name, doc_domain in zip(cluster_doc_names, doc_domains) 
+                               if doc_domain != dominant_domain]
+                if outlier_docs:
+                    logger.warning(f"  └─ Possible outliers: {outlier_docs[:3]}")
         
-        logger.info(f"Generated cluster names: {cluster_names}")
+        logger.info(f"✅ Generated enhanced cluster names with purity scoring")
         return cluster_names
 
 
