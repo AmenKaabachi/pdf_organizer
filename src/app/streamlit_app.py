@@ -103,32 +103,47 @@ def main():
         st.header("⚙️ Settings")
         
         # Embedding model selection
-        st.subheader("Embedding Model")
+        st.subheader("🌍 Embedding Model")
         available_models = EmbeddingGenerator.list_available_models()
         
         model_options = list(available_models.keys())
-        model_descriptions = [f"{name} - {info['description'][:50]}..." 
-                            for name, info in available_models.items()]
         
-        # Default to all-mpnet-base-v2 (best quality model)
-        default_model = 'all-mpnet-base-v2'
+        # Group models by language support
+        english_models = [name for name, info in available_models.items() if info.get('languages', '').startswith('English')]
+        multilingual_models = [name for name, info in available_models.items() if 'languages' in info and not info['languages'].startswith('English')]
+        
+        # Default to BAAI/bge-m3 (state-of-the-art multilingual model)
+        default_model = 'BAAI/bge-m3'
         default_index = model_options.index(default_model) if default_model in model_options else 0
         
         selected_model_index = st.selectbox(
             "Choose AI Model",
             range(len(model_options)),
-            index=default_index,  # Default to the best model
-            format_func=lambda i: model_options[i],
-            help="Select the Sentence-BERT model for generating embeddings"
+            index=default_index,  # Default to multilingual model
+            format_func=lambda i: f"{'🌍' if model_options[i] in multilingual_models else '🇬🇧'} {model_options[i]}",
+            help="Select the Sentence-BERT model. 🌍 = Multilingual (50+ languages), 🇬🇧 = English only"
         )
         selected_model = model_options[selected_model_index]
         
-        # Show model info
+        # Show model info with language support highlighted
         with st.expander("ℹ️ Model Information"):
             model_info = available_models[selected_model]
             st.write(f"**Description:** {model_info['description']}")
             st.write(f"**Embedding Size:** {model_info['size']}")
             st.write(f"**Best For:** {model_info['best_for']}")
+            
+            # Highlight language support
+            if 'languages' in model_info:
+                if model_info['languages'].startswith('English'):
+                    st.info(f"🇬🇧 **Languages:** {model_info['languages']}")
+                else:
+                    st.success(f"🌍 **Languages:** {model_info['languages']}")
+        
+        # Show language support summary
+        if selected_model in multilingual_models:
+            st.success("✅ Multilingual model selected - works with documents in any language!")
+        else:
+            st.info("ℹ️ English-only model selected")
         
         st.markdown("---")
         
@@ -543,6 +558,35 @@ def show_help_info():
     - Use 3-5 clusters for small collections
     - Try auto-tune for optimal results
     - Different models work better for different document types
+    - **Use multilingual models (🌍) for documents in multiple languages**
+    
+    ## 🌍 Multilingual Support
+    
+    **New!** The organizer now supports documents in **50+ languages** including:
+    
+    - 🇸🇦 **Arabic** (العربية)
+    - 🇨🇳 **Chinese** (中文)
+    - 🇫🇷 **French** (Français)
+    - 🇩🇪 **German** (Deutsch)
+    - 🇪🇸 **Spanish** (Español)
+    - 🇯🇵 **Japanese** (日本語)
+    - 🇷🇺 **Russian** (Русский)
+    - 🇮🇹 **Italian** (Italiano)
+    - 🇵🇹 **Portuguese** (Português)
+    - 🇹🇷 **Turkish** (Türkçe)
+    - And many more!
+    
+    **Recommended Multilingual Models:**
+    
+    - **paraphrase-multilingual-mpnet-base-v2**: Best quality for mixed-language documents
+    - **paraphrase-multilingual-MiniLM-L12-v2**: Faster processing for large multilingual datasets
+    - **LaBSE**: Best for cross-lingual matching (109 languages!)
+    
+    **Example Use Cases:**
+    - Mix of Arabic and English research papers
+    - International business documents (French, German, English)
+    - Multilingual legal documents
+    - Academic papers from different countries
     
     ## 📚 Model Information
     

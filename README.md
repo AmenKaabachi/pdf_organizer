@@ -2,6 +2,8 @@
 
 A sophisticated document management system that leverages cutting-edge machine learning and natural language processing to automatically analyze, understand, and organize PDF documents by semantic similarity. Built with enterprise-grade algorithms and production-ready architecture.
 
+**🌍 NEW: Now supports 50+ languages including Arabic, Chinese, French, German, Spanish, Japanese, Russian, and more!**
+
 ## 🎯 Core Features
 
 ### 📄 Advanced PDF Processing
@@ -13,7 +15,8 @@ A sophisticated document management system that leverages cutting-edge machine l
 
 ### 🧠 State-of-the-Art AI Processing
 
-- **Semantic Understanding**: 4 pre-trained Sentence-BERT models optimized for different use cases
+- **Semantic Understanding**: 8 pre-trained Sentence-BERT models (4 English + 4 Multilingual)
+- **🌍 Multilingual Support**: Process documents in 50+ languages with specialized models
 - **Context-Aware Embeddings**: 384-768 dimensional vectors capturing document semantics
 - **Similarity Computing**: Advanced cosine similarity with L2 normalization
 - **Performance Optimization**: GPU acceleration, batch processing, and embedding caching
@@ -499,10 +502,60 @@ graph TD
 
 ## 🎯 Use Cases
 
+### English Documents
+
 - **Academic Research**: Organize research papers by topic
 - **Legal Documents**: Group contracts, cases, and legal documents
 - **Business Reports**: Categorize financial reports, presentations, and memos
 - **Healthcare**: Organize medical records, research, and documentation
+
+### 🌍 Multilingual Documents (NEW!)
+
+- **International Business**: Mix of English, French, German, Spanish documents
+- **Academic Research**: Papers in Arabic, Chinese, Japanese, English
+- **Legal & Compliance**: Multilingual contracts and regulations
+- **Government Documents**: Official documents in multiple languages
+- **Translation Projects**: Original and translated document pairs
+- **Global Operations**: Documents from international offices
+
+### Supported Languages (50+)
+
+🇸🇦 Arabic • 🇨🇳 Chinese • 🇬🇧 English • 🇫🇷 French • 🇩🇪 German • 🇪🇸 Spanish • 🇯🇵 Japanese • 🇷🇺 Russian • 🇮🇹 Italian • 🇵🇹 Portuguese • 🇹🇷 Turkish • 🇳🇱 Dutch • 🇵🇱 Polish • 🇰🇷 Korean • 🇻🇳 Vietnamese • 🇹🇭 Thai • 🇮🇩 Indonesian • 🇬🇷 Greek • 🇸🇪 Swedish • 🇩🇰 Danish • 🇳🇴 Norwegian • 🇫🇮 Finnish • 🇨🇿 Czech • 🇭🇺 Hungarian • 🇷🇴 Romanian • 🇧🇬 Bulgarian • 🇭🇷 Croatian • and 25+ more!
+
+## 🌍 Multilingual Model Guide
+
+### Which Model to Choose?
+
+#### 🏆 Top 3 Recommended Models (2024 State-of-the-Art):
+
+| Model                                        | Languages | Size      | Speed  | Quality | Best For                                              |
+| -------------------------------------------- | --------- | --------- | ------ | ------- | ----------------------------------------------------- |
+| **🥇 BAAI/bge-m3**                           | 100+      | **1024D** | Medium | ★★★★★   | **Best overall** - Hybrid retrieval, highest accuracy |
+| **🥈 intfloat/multilingual-e5-large**        | 100+      | **1024D** | Slow   | ★★★★★   | **Maximum quality** - Research & critical documents   |
+| **🥉 paraphrase-multilingual-mpnet-base-v2** | 50+       | 768D      | Fast   | ★★★★☆   | **Best balance** - Speed + quality for most use cases |
+
+#### Additional Options:
+
+| Model                                 | Languages | Size | Speed     | Best For                         |
+| ------------------------------------- | --------- | ---- | --------- | -------------------------------- |
+| paraphrase-multilingual-MiniLM-L12-v2 | 50+       | 384D | Very Fast | ⚡ Large datasets (1000+ docs)   |
+| distiluse-base-multilingual-cased-v2  | 15+       | 512D | Fast      | ⚖️ Major languages only          |
+| all-mpnet-base-v2                     | English   | 768D | Medium    | 🇬🇧 English-only, highest quality |
+| all-MiniLM-L6-v2                      | English   | 384D | Very Fast | 🇬🇧 English-only, large datasets  |
+
+**Quick Recommendations:**
+
+- **🏆 Best Quality**: Use `BAAI/bge-m3` (1024D, 100+ languages, state-of-the-art)
+- **⚡ Best Speed**: Use `paraphrase-multilingual-MiniLM-L12-v2` (384D, 50+ languages)
+- **⚖️ Best Balance**: Use `paraphrase-multilingual-mpnet-base-v2` (768D, 50+ languages)
+- **🇬🇧 English Only**: Use `all-mpnet-base-v2` (768D, English)
+
+**By Language:**
+
+- **Arabic + English**: `BAAI/bge-m3` or `intfloat/multilingual-e5-large`
+- **Asian Languages** (Chinese/Japanese/Korean): `BAAI/bge-m3` (best Asian support)
+- **European Mix**: `paraphrase-multilingual-mpnet-base-v2` (fast, good quality)
+- **100+ docs**: `paraphrase-multilingual-MiniLM-L12-v2` (fastest)
 
 ## 🧪 Development & Testing
 

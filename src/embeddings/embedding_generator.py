@@ -23,25 +23,58 @@ class EmbeddingGenerator:
     
     # Available pre-trained models
     AVAILABLE_MODELS = {
+        # === ENGLISH-ONLY MODELS ===
         'all-MiniLM-L6-v2': {
             'size': 384,
-            'description': 'Fast and efficient, good balance of speed and quality',
-            'best_for': 'General purpose, large datasets'
+            'description': 'Fast and efficient, good balance of speed and quality (English)',
+            'best_for': 'General purpose, large English datasets',
+            'languages': 'English'
         },
         'all-mpnet-base-v2': {
             'size': 768,
-            'description': 'High quality embeddings, slower but more accurate',
-            'best_for': 'High accuracy requirements'
+            'description': 'High quality embeddings, slower but more accurate (English)',
+            'best_for': 'High accuracy requirements for English documents',
+            'languages': 'English'
         },
         'all-distilroberta-v1': {
             'size': 768,
-            'description': 'Good balance of speed and accuracy',
-            'best_for': 'Medium-sized datasets'
+            'description': 'Good balance of speed and accuracy (English)',
+            'best_for': 'Medium-sized English datasets',
+            'languages': 'English'
         },
-        'paraphrase-MiniLM-L6-v2': {
+        
+        # === TOP 3 MULTILINGUAL MODELS (BEST QUALITY) ===
+        'BAAI/bge-m3': {
+            'size': 1024,
+            'description': '🏆 State-of-the-art multilingual model (100+ languages) - BEST OVERALL',
+            'best_for': 'Highest quality multilingual clustering, cross-lingual search',
+            'languages': '100+ languages including Arabic, Chinese, French, German, Spanish, Japanese, Russian, Korean, etc.'
+        },
+        'intfloat/multilingual-e5-large': {
+            'size': 1024,
+            'description': '🥇 Exceptional multilingual model (100+ languages) - HIGHEST ACCURACY',
+            'best_for': 'Maximum quality for diverse multilingual documents',
+            'languages': '100+ languages including Arabic, Chinese, French, German, Spanish, Japanese, Russian, Korean, etc.'
+        },
+        'paraphrase-multilingual-mpnet-base-v2': {
+            'size': 768,
+            'description': '🥈 High-quality multilingual model (50+ languages) - BEST BALANCE',
+            'best_for': 'Fast processing with excellent multilingual quality',
+            'languages': '50+ languages including Arabic, Chinese, French, German, Spanish, Japanese, Russian, etc.'
+        },
+        
+        # === ADDITIONAL MULTILINGUAL OPTIONS ===
+        'paraphrase-multilingual-MiniLM-L12-v2': {
             'size': 384,
-            'description': 'Optimized for paraphrase detection',
-            'best_for': 'Finding similar documents'
+            'description': 'Fast multilingual model - 50+ languages',
+            'best_for': 'Large multilingual datasets where speed is critical',
+            'languages': '50+ languages including Arabic, English, French, German, Spanish, Chinese, Japanese, Russian'
+        },
+        'sentence-transformers/distiluse-base-multilingual-cased-v2': {
+            'size': 512,
+            'description': 'Balanced multilingual model - 15+ major languages',
+            'best_for': 'Multilingual semantic similarity with good speed',
+            'languages': '15+ languages including Arabic, English, French, German, Spanish, Italian, Dutch, Polish, Turkish, Chinese'
         }
     }
     
