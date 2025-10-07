@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Streamlit web application for the AI-Powered PDF Organizer.
 Simple, clean original design.
@@ -74,6 +75,10 @@ def initialize_session_state():
         st.session_state.uploaded_file_data = None
     if 'cluster_names' not in st.session_state:
         st.session_state.cluster_names = None
+    if 'processing' not in st.session_state:
+        st.session_state.processing = False
+    if 'processing_cancelled' not in st.session_state:
+        st.session_state.processing_cancelled = False
 
 
 def main():
@@ -120,8 +125,8 @@ def main():
             "Choose AI Model",
             range(len(model_options)),
             index=default_index,  # Default to multilingual model
-            format_func=lambda i: f"{'🌍' if model_options[i] in multilingual_models else '🇬🇧'} {model_options[i]}",
-            help="Select the Sentence-BERT model. 🌍 = Multilingual (50+ languages), 🇬🇧 = English only"
+            format_func=lambda i: f"{'🌍 [Multi]' if model_options[i] in multilingual_models else '[EN]'} {model_options[i]}",
+            help="Select the Sentence-BERT model. 🌍 = Multilingual (50+ languages), [EN] = English only"
         )
         selected_model = model_options[selected_model_index]
         
@@ -135,7 +140,7 @@ def main():
             # Highlight language support
             if 'languages' in model_info:
                 if model_info['languages'].startswith('English'):
-                    st.info(f"🇬🇧 **Languages:** {model_info['languages']}")
+                    st.info(f"[EN] **Languages:** {model_info['languages']}")
                 else:
                     st.success(f"🌍 **Languages:** {model_info['languages']}")
         
@@ -202,7 +207,29 @@ def main():
                 for file in uploaded_files:
                     st.write(f"- {file.name} ({file.size / 1024:.1f} KB)")
             
-            if st.button("🚀 Start Processing", type="primary"):
+            # Show Start or Cancel button based on processing state
+            col_btn1, col_btn2 = st.columns([1, 4])
+            
+            with col_btn1:
+                if not st.session_state.processing:
+                    if st.button("🚀 Start Processing", type="primary", use_container_width=True):
+                        st.session_state.processing = True
+                        st.session_state.processing_cancelled = False
+                        st.rerun()
+                else:
+                    if st.button("🛑 Cancel", type="secondary", use_container_width=True):
+                        st.session_state.processing_cancelled = True
+                        st.warning("⚠️ Cancelling process...")
+                        time.sleep(0.5)
+                        st.session_state.processing = False
+                        st.rerun()
+            
+            with col_btn2:
+                if st.session_state.processing:
+                    st.info("⏳ Processing in progress... Click Cancel to stop and change settings.")
+            
+            # Process if flag is set
+            if st.session_state.processing and not st.session_state.processing_cancelled:
                 process_documents(uploaded_files, selected_model, clustering_algorithm, 
                                 n_clusters, auto_tune, eps if clustering_algorithm == "dbscan" else None,
                                 min_samples if clustering_algorithm == "dbscan" else None)
@@ -235,6 +262,13 @@ def process_documents(uploaded_files, model_name, algorithm, n_clusters, auto_tu
     status_text = st.empty()
     
     try:
+        # Check for cancellation
+        if st.session_state.processing_cancelled:
+            status_text.text("🛑 Processing cancelled")
+            progress_bar.empty()
+            st.session_state.processing = False
+            return
+        
         # Save uploaded file data for later download
         uploaded_file_data = {}
         for file in uploaded_files:
@@ -247,6 +281,13 @@ def process_documents(uploaded_files, model_name, algorithm, n_clusters, auto_tu
         status_text.text("📄 Extracting text from PDFs...")
         progress_bar.progress(0.25)
         
+        # Check for cancellation
+        if st.session_state.processing_cancelled:
+            status_text.text("🛑 Processing cancelled")
+            progress_bar.empty()
+            st.session_state.processing = False
+            return
+        
         extractor = PDFExtractor()
         extraction_results = []
         
@@ -258,6 +299,13 @@ def process_documents(uploaded_files, model_name, algorithm, n_clusters, auto_tu
                 extraction_results.append(result)
         
         st.session_state.extraction_results = extraction_results
+        
+        # Check for cancellation
+        if st.session_state.processing_cancelled:
+            status_text.text("🛑 Processing cancelled after extraction")
+            progress_bar.empty()
+            st.session_state.processing = False
+            return
         
         # Step 2: Generate embeddings
         status_text.text(f"🧠 Generating AI embeddings with {model_name}...")
@@ -272,6 +320,13 @@ def process_documents(uploaded_files, model_name, algorithm, n_clusters, auto_tu
         
         st.session_state.embeddings = embeddings
         st.session_state.document_names = document_names
+        
+        # Check for cancellation
+        if st.session_state.processing_cancelled:
+            status_text.text("🛑 Processing cancelled after embeddings")
+            progress_bar.empty()
+            st.session_state.processing = False
+            return
         
         # Step 3: Cluster documents
         status_text.text("🎯 Clustering documents...")
@@ -301,6 +356,13 @@ def process_documents(uploaded_files, model_name, algorithm, n_clusters, auto_tu
         st.session_state.cluster_labels = cluster_labels
         st.session_state.clusterer = clusterer
         
+        # Check for cancellation
+        if st.session_state.processing_cancelled:
+            status_text.text("🛑 Processing cancelled after clustering")
+            progress_bar.empty()
+            st.session_state.processing = False
+            return
+        
         # Step 4: Generate intelligent cluster names
         status_text.text("🏷️ Generating cluster names...")
         progress_bar.progress(0.90)
@@ -319,11 +381,17 @@ def process_documents(uploaded_files, model_name, algorithm, n_clusters, auto_tu
         status_text.empty()
         progress_bar.empty()
         
+        # Reset processing flag
+        st.session_state.processing = False
+        st.session_state.processing_cancelled = False
+        
         st.success(f"🎉 Successfully processed {len(uploaded_file_data)} documents into {len(set(cluster_labels))} clusters!")
         st.rerun()
         
     except Exception as e:
         st.error(f"❌ Error: {str(e)}")
+        st.session_state.processing = False
+        st.session_state.processing_cancelled = False
 
 
 def show_analysis_results():
@@ -335,6 +403,13 @@ def show_analysis_results():
     clusterer = st.session_state.clusterer
     document_names = st.session_state.document_names
     cluster_names = st.session_state.cluster_names or {}
+    
+    # Check if processing was cancelled or incomplete
+    if cluster_labels is None or embeddings is None:
+        st.warning("⚠️ Processing was cancelled or incomplete. Please process documents again to see full analysis.")
+        if extraction_results is not None:
+            st.info(f"📄 Text extraction completed for {len(extraction_results)} documents.")
+        return
     
     # Summary metrics
     col1, col2, col3, col4 = st.columns(4)
@@ -369,21 +444,27 @@ def show_analysis_results():
     st.subheader("📋 Document Details")
     
     df_data = []
-    for i, (result, cluster) in enumerate(zip(extraction_results, cluster_labels)):
-        cluster_name = cluster_names.get(cluster, f"Cluster_{cluster}")
-        df_data.append({
-            'Document': result['filename'],
-            'Cluster': cluster_name,
-            'Pages': result['page_count'],
-            'Words': result['word_count'],
-            'Status': '✅' if result['success'] else '❌'
-        })
+    if cluster_labels is not None and extraction_results is not None:
+        for i, (result, cluster) in enumerate(zip(extraction_results, cluster_labels)):
+            cluster_name = cluster_names.get(cluster, f"Cluster_{cluster}")
+            df_data.append({
+                'Document': result['filename'],
+                'Cluster': cluster_name,
+                'Pages': result['page_count'],
+                'Words': result['word_count'],
+                'Status': '✅' if result['success'] else '❌'
+            })
     
     df = pd.DataFrame(df_data)
-    st.dataframe(df, width='stretch')
+    st.dataframe(df, use_container_width=True)
     
     # Visualization
     st.subheader("📊 Cluster Visualization")
+    
+    # Check if we have the necessary data for visualization
+    if embeddings is None or cluster_labels is None or document_names is None:
+        st.info("⏳ Complete processing to see cluster visualization")
+        return
     
     # Use PCA for 2D visualization
     from sklearn.decomposition import PCA
@@ -414,6 +495,11 @@ def show_organization_options():
     document_names = st.session_state.document_names
     uploaded_file_data = st.session_state.uploaded_file_data
     cluster_names = st.session_state.cluster_names or {}
+    
+    # Check if processing was cancelled or incomplete
+    if cluster_labels is None or document_names is None:
+        st.warning("⚠️ Processing was cancelled or incomplete. Please complete document processing to organize files.")
+        return
     
     st.subheader("🗂️ Organization Preview")
     

@@ -4,6 +4,16 @@ A sophisticated document management system that leverages cutting-edge machine l
 
 **🌍 NEW: Now supports 50+ languages including Arabic, Chinese, French, German, Spanish, Japanese, Russian, and more!**
 
+## 📚 Documentation
+
+**📖 [Complete Documentation](docs/)** - Comprehensive guides available in the `docs/` folder:
+
+- **[🚀 Deployment Guide](docs/DEPLOYMENT_GUIDE.md)** - Deploy to Streamlit Cloud, AWS, Azure, Docker
+- **[🌍 Multilingual Guide](docs/MULTILINGUAL_GUIDE.md)** - Process documents in 100+ languages
+- **[🏆 Top 3 Models Comparison](docs/TOP_3_MODELS_COMPARISON.md)** - Choose the best embedding model
+- **[⚙️ Model Setup Guide](docs/MODEL_SETUP.md)** - Download and configure models
+- **[🛑 Cancel Feature Docs](docs/CANCEL_FEATURE.md)** - Technical documentation for cancel functionality
+
 ## 🎯 Core Features
 
 ### 📄 Advanced PDF Processing
