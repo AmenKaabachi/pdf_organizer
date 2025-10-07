@@ -110,9 +110,14 @@ def main():
         model_descriptions = [f"{name} - {info['description'][:50]}..." 
                             for name, info in available_models.items()]
         
+        # Default to all-mpnet-base-v2 (best quality model)
+        default_model = 'all-mpnet-base-v2'
+        default_index = model_options.index(default_model) if default_model in model_options else 0
+        
         selected_model_index = st.selectbox(
             "Choose AI Model",
             range(len(model_options)),
+            index=default_index,  # Default to the best model
             format_func=lambda i: model_options[i],
             help="Select the Sentence-BERT model for generating embeddings"
         )
@@ -137,8 +142,21 @@ def main():
         )
         
         if clustering_algorithm == "kmeans":
-            n_clusters = st.slider("Number of Clusters", 2, 10, 3)
-            auto_tune = st.checkbox("Auto-tune clusters", value=True)
+            # Auto-tune checkbox FIRST
+            auto_tune = st.checkbox("Auto-tune clusters", value=True, 
+                                   help="Automatically find optimal number of clusters")
+            
+            # Manual slider (disabled when auto-tune is on)
+            n_clusters = st.slider(
+                "Number of Clusters", 
+                2, 10, 3,
+                disabled=auto_tune,  # Grey out when auto-tune is enabled
+                help="Manual cluster count (disabled when auto-tune is on)"
+            )
+            
+            if auto_tune:
+                st.info("🤖 Auto-tune enabled: Optimal cluster count will be determined automatically")
+        
         elif clustering_algorithm == "dbscan":
             eps = st.slider("Epsilon (eps)", 0.1, 2.0, 0.5, 0.1)
             min_samples = st.slider("Min Samples", 1, 10, 2)
@@ -227,9 +245,10 @@ def process_documents(uploaded_files, model_name, algorithm, n_clusters, auto_tu
         st.session_state.extraction_results = extraction_results
         
         # Step 2: Generate embeddings
-        status_text.text("🧠 Generating AI embeddings...")
+        status_text.text(f"🧠 Generating AI embeddings with {model_name}...")
         progress_bar.progress(0.5)
         
+        # Use the model selected by the user from the dropdown
         embedding_generator = EmbeddingGenerator(model_name=model_name)
         embeddings, document_names = embedding_generator.generate_document_embeddings(
             extraction_results,
@@ -245,8 +264,16 @@ def process_documents(uploaded_files, model_name, algorithm, n_clusters, auto_tu
         
         clusterer_kwargs = {'algorithm': algorithm, 'random_state': 42}
         
+        # IMPORTANT: Only pass n_clusters if NOT using auto-tune
         if algorithm == "kmeans":
-            clusterer_kwargs['n_clusters'] = n_clusters
+            if not auto_tune:
+                # Use manual cluster count only when auto-tune is OFF
+                clusterer_kwargs['n_clusters'] = n_clusters
+                status_text.text(f"🎯 Clustering documents into {n_clusters} clusters...")
+            else:
+                # Auto-tune will determine optimal cluster count
+                status_text.text("🎯 Clustering documents (auto-detecting optimal count)...")
+        
         elif algorithm == "dbscan":
             clusterer_kwargs['eps'] = eps
             clusterer_kwargs['min_samples'] = min_samples
@@ -359,7 +386,8 @@ def show_analysis_results():
             labels={'x': 'PC1', 'y': 'PC2'}
         )
         fig.update_traces(textposition='top center')
-        st.plotly_chart(fig, width='stretch')
+        # Use use_container_width instead of deprecated width parameter
+        st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("Need at least 2 documents for visualization")
 

@@ -112,7 +112,27 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Run the Application
+### 2. Download AI Models (ONE-TIME SETUP)
+
+**IMPORTANT**: Before first use, download the required AI model (~438MB):
+
+```bash
+# Run the setup script (only needed once)
+python setup_models.py
+```
+
+This will download and cache the embedding model. After this one-time setup, the model loads instantly!
+
+**What gets downloaded:**
+
+- Model: `all-mpnet-base-v2`
+- Size: 438MB
+- Location: `~/.cache/huggingface/hub/`
+- Time: ~5-10 minutes (depending on internet speed)
+
+**Alternative**: Skip the setup script and let the model download automatically on first run (will cause a delay during first processing).
+
+### 3. Run the Application
 
 #### Web Dashboard (Recommended)
 

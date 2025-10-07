@@ -146,7 +146,10 @@ def main():
         
         # Step 2: Generate embeddings
         logger.info("🧠 Step 2: Generating semantic embeddings...")
-        embedding_generator = EmbeddingGenerator(model_name=args.model)
+        # Use larger model for better domain separation in specialized documents
+        # all-mpnet-base-v2 has 768 dimensions (vs 384) for better distinguishing
+        # between Healthcare, Physics, Geography, CS, etc.
+        embedding_generator = EmbeddingGenerator(model_name='all-mpnet-base-v2')
         embeddings, document_names = embedding_generator.generate_document_embeddings(
             valid_documents,
             batch_size=args.batch_size

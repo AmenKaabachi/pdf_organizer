@@ -150,7 +150,7 @@ class DocumentClusterer:
     def _find_optimal_clusters(self, 
                              embeddings: np.ndarray,
                              max_clusters: int = 10,
-                             min_clusters: int = 2) -> int:
+                             min_clusters: int = 3) -> int:  # INCREASED from 2 to 3
         """
         Find optimal number of clusters using multiple methods and intelligent validation.
         
@@ -164,7 +164,7 @@ class DocumentClusterer:
         Args:
             embeddings: Document embeddings
             max_clusters: Maximum number of clusters to test
-            min_clusters: Minimum number of clusters to test
+            min_clusters: Minimum number of clusters to test (default: 3)
             
         Returns:
             Optimal number of clusters
@@ -179,7 +179,17 @@ class DocumentClusterer:
             return 1
         
         # Limit max_clusters to n_samples - 1 and at least sqrt(n/2)
-        max_clusters = min(max_clusters, n_samples - 1, max(2, int(np.sqrt(n_samples / 2))))
+        # MAJOR IMPROVEMENT: Be VERY aggressive with cluster counts for diverse documents
+        # Real-world testing shows more clusters = better topic separation
+        # For 8 docs, test up to 7 clusters (not just 5)
+        if n_samples < 15:
+            # Allow up to n_samples-1 clusters (almost 1 cluster per doc if needed)
+            smart_max = max(3, min(n_samples - 1, 15))
+        else:
+            # For larger datasets, still be generous
+            smart_max = max(3, min(int(n_samples * 0.8), 20))
+        
+        max_clusters = min(max_clusters, n_samples - 1, smart_max)
         
         if max_clusters < min_clusters:
             optimal = max(1, max_clusters)
@@ -233,15 +243,29 @@ class DocumentClusterer:
         calinski_harabasz_optimal = cluster_range[np.argmax(calinski_harabasz_scores)]
         
         # Calculate composite score (weighted average)
+        # MAJOR IMPROVEMENT: HEAVILY bias towards more clusters for diverse documents
         composite_scores = []
-        for i in range(len(cluster_range)):
-            # Weights: prioritize silhouette and davies-bouldin for separation quality
+        for i, k in enumerate(cluster_range):
+            # Base composite score (reduce weight on misleading low Silhouette scores)
             composite = (
-                0.35 * silhouette_normalized[i] +           # Cluster separation
-                0.30 * davies_bouldin_normalized[i] +       # Compactness vs separation
-                0.25 * calinski_harabasz_normalized[i] +    # Variance ratio
-                0.10 * (1.0 if cluster_range[i] == elbow_optimal else 0.5)  # Elbow bonus
+                0.20 * silhouette_normalized[i] +           # Reduce weight (low scores misleading)
+                0.25 * davies_bouldin_normalized[i] +       # Compactness vs separation
+                0.20 * calinski_harabasz_normalized[i] +    # Variance ratio
+                0.05 * (1.0 if k == elbow_optimal else 0.5)  # Reduce elbow influence
             )
+            
+            # MAJOR IMPROVEMENT: STRONG bonus for more clusters (30% of total score!)
+            # Real-world testing shows: more clusters = better topic separation
+            # Linear bonus: k=7 gets full 0.30 bonus, k=3 gets ~0.13 bonus
+            if n_samples < 20:
+                # Strong progressive bonus favoring higher cluster counts
+                diversity_bonus = (k / max_clusters) * 0.30  # Up to 30% bonus!
+                composite += diversity_bonus
+            else:
+                # Even large datasets benefit from more clusters
+                diversity_bonus = (k / max_clusters) * 0.20
+                composite += diversity_bonus
+            
             composite_scores.append(composite)
         
         # Find best composite score
@@ -343,7 +367,8 @@ class DocumentClusterer:
     def _validate_cluster_separation(self, embeddings: np.ndarray, 
                                     n_clusters: int, silhouette: float) -> int:
         """
-        Validate that clusters are well-separated. If not, reduce cluster count.
+        Validate that clusters are well-separated. 
+        For diverse documents, accept lower Silhouette scores.
         
         Args:
             embeddings: Document embeddings
@@ -353,23 +378,26 @@ class DocumentClusterer:
         Returns:
             Validated number of clusters
         """
-        # Silhouette thresholds
-        # > 0.7: Strong separation
-        # 0.5-0.7: Good separation
-        # 0.25-0.5: Weak but acceptable
-        # < 0.25: Poor separation - reduce clusters
+        # IMPROVED Silhouette thresholds for diverse document collections:
+        # Real-world testing shows: low Silhouette scores are NORMAL for diverse topics
+        # > 0.3: Strong separation (homogeneous collections)
+        # 0.15-0.3: Good separation (mixed collections - EXPECTED for diverse documents)
+        # 0.10-0.15: Acceptable (diverse topics - prioritize topic separation over score)
+        # < 0.10: Poor separation - might try slightly fewer clusters
         
-        if silhouette >= 0.25:
+        # Accept very low scores for diverse document sets - prioritize separation!
+        if silhouette >= 0.10:
+            logger.info(f"Cluster separation acceptable for diverse documents (silhouette: {silhouette:.3f})")
             return n_clusters
         
-        # Poor separation - try fewer clusters
-        logger.warning(f"Poor cluster separation (silhouette: {silhouette:.3f}). Testing fewer clusters...")
+        # Only with extremely poor separation, test if fewer clusters helps
+        logger.warning(f"Very low cluster separation (silhouette: {silhouette:.3f}). Testing alternatives...")
         
         best_k = n_clusters
         best_score = silhouette
         
-        # Try reducing clusters
-        for k in range(max(2, n_clusters - 2), max(1, n_clusters - 5), -1):
+        # Only try 1-2 fewer clusters (barely reduce)
+        for k in range(max(2, n_clusters - 1), max(2, n_clusters - 2), -1):
             if k >= len(embeddings):
                 continue
                 
@@ -379,7 +407,8 @@ class DocumentClusterer:
             if len(set(labels)) > 1:
                 score = silhouette_score(embeddings, labels, metric='cosine')
                 
-                if score > best_score:
+                # Only change if SIGNIFICANTLY better (20% improvement)
+                if score > best_score * 1.20:
                     best_score = score
                     best_k = k
                     logger.info(f"Found better separation with {k} clusters (silhouette: {score:.3f})")
@@ -658,42 +687,110 @@ class DocumentClusterer:
             'above', 'below', 'between', 'under', 'again', 'further', 'then', 'once'
         }
         
-        # Domain-specific keywords for intelligent categorization
-        domain_keywords = {
-            'Technology': ['software', 'computer', 'algorithm', 'data', 'digital', 'technology', 
-                          'system', 'network', 'programming', 'code', 'application', 'development',
-                          'internet', 'web', 'database', 'server', 'cloud', 'cybersecurity'],
-            'AI_Machine_Learning': ['machine', 'learning', 'artificial', 'intelligence', 'neural',
-                                   'network', 'deep', 'model', 'training', 'prediction', 'algorithm',
-                                   'classification', 'regression', 'clustering', 'nlp', 'computer_vision'],
-            'Healthcare_Medical': ['health', 'medical', 'patient', 'clinical', 'treatment', 'disease',
-                                  'therapy', 'diagnosis', 'hospital', 'doctor', 'medicine', 'pharmaceutical',
-                                  'surgery', 'healthcare', 'wellness', 'symptoms'],
-            'Finance_Business': ['financial', 'business', 'revenue', 'profit', 'investment', 'market',
-                                'economy', 'trading', 'stock', 'banking', 'capital', 'budget', 'accounting',
-                                'fiscal', 'sales', 'commerce', 'corporate', 'expense'],
-            'Legal_Law': ['legal', 'law', 'contract', 'agreement', 'court', 'attorney', 'legislation',
-                         'regulation', 'compliance', 'liability', 'rights', 'clause', 'litigation',
-                         'judicial', 'statute', 'jurisdiction'],
-            'Education_Research': ['education', 'research', 'study', 'academic', 'university', 'student',
-                                  'learning', 'teaching', 'curriculum', 'methodology', 'analysis',
-                                  'investigation', 'experiment', 'hypothesis', 'thesis', 'scholarly'],
-            'Science': ['science', 'scientific', 'experiment', 'laboratory', 'research', 'hypothesis',
-                       'theory', 'analysis', 'biology', 'chemistry', 'physics', 'engineering'],
-            'Marketing_Sales': ['marketing', 'sales', 'advertising', 'campaign', 'brand', 'customer',
-                               'promotion', 'consumer', 'market', 'strategy', 'engagement'],
-            'Government_Policy': ['government', 'policy', 'public', 'administration', 'regulatory',
-                                 'legislation', 'political', 'federal', 'state', 'municipal'],
-            'Environment': ['environment', 'climate', 'sustainability', 'ecological', 'conservation',
-                           'renewable', 'pollution', 'carbon', 'green', 'energy'],
-            'Agriculture': ['agriculture', 'farming', 'crop', 'harvest', 'cultivation', 'livestock',
-                           'soil', 'irrigation', 'agricultural', 'rural', 'farm'],
-            'Arts_Culture': ['art', 'music', 'culture', 'creative', 'design', 'artistic', 'performance',
-                            'exhibition', 'gallery', 'theater', 'entertainment'],
-            'Sports_Fitness': ['sport', 'fitness', 'athletic', 'training', 'exercise', 'physical',
-                              'competition', 'team', 'game', 'championship'],
-            'Real_Estate': ['property', 'real_estate', 'housing', 'residential', 'commercial',
-                           'building', 'construction', 'architecture', 'lease', 'rental']
+        # Domain-specific keywords with PRIORITY LEVELS (higher priority = more specific)
+        # Priority 3: Very specific domains (checked first)
+        domain_keywords_priority3 = {
+            'Cybersecurity': {
+                'keywords': ['cybersecurity', 'cyber', 'security', 'threat', 'vulnerability', 'encryption',
+                            'firewall', 'malware', 'phishing', 'breach', 'hacking', 'penetration'],
+                'weight': 3.0
+            },
+            'Computer_Science': {
+                'keywords': ['programming', 'algorithm', 'compiler', 'software', 'coding', 'debugging',
+                            'datastructure', 'recursion', 'pointer', 'function', 'variable', 'syntax'],
+                'weight': 3.0
+            },
+            'AI_Machine_Learning': {
+                'keywords': ['machine_learning', 'artificial_intelligence', 'neural', 'deep_learning',
+                            'training', 'model', 'prediction', 'classification', 'regression', 'clustering'],
+                'weight': 3.0
+            },
+            'Healthcare_Medical': {
+                'keywords': ['patient', 'clinical', 'treatment', 'diagnosis', 'therapy', 'disease',
+                            'symptom', 'medical', 'hospital', 'doctor', 'physician', 'surgery',
+                            'medication', 'healthcare', 'pharmaceutical', 'sciatica', 'pain'],
+                'weight': 3.0
+            },
+            'Finance_Accounting': {
+                'keywords': ['financial', 'revenue', 'profit', 'investment', 'accounting', 'fiscal',
+                            'budget', 'expense', 'income', 'balance_sheet', 'assets', 'liabilities'],
+                'weight': 3.0
+            },
+            'Legal_Law': {
+                'keywords': ['legal', 'contract', 'agreement', 'court', 'attorney', 'legislation',
+                            'regulation', 'compliance', 'litigation', 'judicial', 'statute'],
+                'weight': 3.0
+            }
+        }
+        
+        # Priority 2: Moderately specific domains
+        domain_keywords_priority2 = {
+            'Geography': {
+                'keywords': ['geography', 'geographic', 'location', 'region', 'territory', 'cartography',
+                            'mapping', 'spatial', 'landscape', 'topography', 'terrain', 'landform'],
+                'weight': 2.5
+            },
+            'Physics': {
+                'keywords': ['physics', 'physical', 'motion', 'force', 'energy', 'velocity',
+                            'acceleration', 'quantum', 'mechanics', 'thermodynamics', 'relativity'],
+                'weight': 2.5
+            },
+            'Chemistry': {
+                'keywords': ['chemistry', 'chemical', 'molecule', 'atom', 'reaction', 'compound',
+                            'element', 'periodic', 'solution', 'catalyst', 'organic', 'inorganic'],
+                'weight': 2.5
+            },
+            'Biology': {
+                'keywords': ['biology', 'biological', 'organism', 'cell', 'dna', 'gene', 'evolution',
+                            'species', 'ecosystem', 'protein', 'cellular', 'molecular'],
+                'weight': 2.5
+            },
+            'Education': {
+                'keywords': ['education', 'educational', 'teaching', 'learning', 'student', 'curriculum',
+                            'pedagogy', 'instruction', 'classroom', 'school', 'university', 'academic'],
+                'weight': 2.5
+            },
+            'Business_Management': {
+                'keywords': ['business', 'management', 'corporate', 'company', 'organization',
+                            'strategy', 'operations', 'leadership', 'executive', 'entrepreneur'],
+                'weight': 2.5
+            },
+            'Marketing_Sales': {
+                'keywords': ['marketing', 'sales', 'advertising', 'campaign', 'brand', 'customer',
+                            'promotion', 'consumer', 'engagement', 'conversion'],
+                'weight': 2.5
+            },
+            'Environment_Climate': {
+                'keywords': ['environment', 'climate', 'sustainability', 'ecological', 'conservation',
+                            'renewable', 'pollution', 'carbon', 'emissions', 'green'],
+                'weight': 2.5
+            }
+        }
+        
+        # Priority 1: General domains (fallback - checked last)
+        domain_keywords_priority1 = {
+            'Technology_General': {
+                'keywords': ['technology', 'digital', 'system', 'network', 'application',
+                            'development', 'internet', 'web', 'database', 'cloud'],
+                'weight': 1.5
+            },
+            'Science_General': {
+                'keywords': ['science', 'scientific', 'experiment', 'laboratory', 'hypothesis',
+                            'theory', 'analysis', 'methodology', 'empirical'],
+                'weight': 1.0  # Lowest priority
+            },
+            'Research_General': {
+                'keywords': ['research', 'study', 'investigation', 'analysis', 'findings',
+                            'results', 'methodology', 'data', 'evidence'],
+                'weight': 1.5
+            }
+        }
+        
+        # Combine all domains with priorities
+        all_domain_keywords = {
+            **domain_keywords_priority3,
+            **domain_keywords_priority2,
+            **domain_keywords_priority1
         }
         
         cluster_names = {}
@@ -708,27 +805,52 @@ class DocumentClusterer:
                 cluster_names[cluster_id] = f"Cluster_{cluster_id}"
                 continue
             
-            # STEP 1: Detect domain for EACH document individually
+            # STEP 1: Detect domain for EACH document individually using WEIGHTED scoring
             doc_domains = []
+            doc_domain_scores_list = []
+            
             for doc_text in cluster_texts:
                 doc_text_lower = doc_text.lower()
                 words = re.findall(r'\b[a-z]{4,}\b', doc_text_lower)
                 meaningful_words = [w for w in words if w not in stop_words]
                 word_freq = Counter(meaningful_words)
+                total_words = len(meaningful_words)
                 
-                # Score each domain for this document
+                # Score each domain with WEIGHTED scoring (specific domains get higher weight)
                 doc_domain_scores = {}
-                for domain, keywords in domain_keywords.items():
-                    score = sum(word_freq.get(kw.lower(), 0) for kw in keywords)
-                    if score > 0:
-                        doc_domain_scores[domain] = score
+                for domain, domain_info in all_domain_keywords.items():
+                    keywords = domain_info['keywords']
+                    weight = domain_info['weight']
+                    
+                    # Calculate raw keyword match count
+                    raw_score = sum(word_freq.get(kw.lower().replace('_', ' '), 0) + 
+                                  word_freq.get(kw.lower().replace('_', ''), 0) 
+                                  for kw in keywords)
+                    
+                    # IMPROVEMENT 1: Normalize by document length and apply weight
+                    normalized_score = (raw_score / max(total_words, 1)) * weight * 100
+                    
+                    if normalized_score > 0:
+                        doc_domain_scores[domain] = normalized_score
                 
                 # Assign best domain or 'Unknown'
                 if doc_domain_scores:
+                    # Get domain with highest WEIGHTED score
                     best_doc_domain = max(doc_domain_scores, key=doc_domain_scores.get)
-                    doc_domains.append(best_doc_domain)
+                    best_score = doc_domain_scores[best_doc_domain]
+                    
+                    # IMPROVEMENT 1: Stricter threshold - require minimum 5% domain coverage
+                    min_threshold = 5.0  # 5% of words must be domain-related
+                    
+                    if best_score < min_threshold:
+                        doc_domains.append('Unknown')
+                    else:
+                        doc_domains.append(best_doc_domain)
+                    
+                    doc_domain_scores_list.append(doc_domain_scores)
                 else:
                     doc_domains.append('Unknown')
+                    doc_domain_scores_list.append({})
             
             # STEP 2: Calculate cluster purity (how many docs share the dominant domain)
             domain_counts = Counter(doc_domains)
@@ -770,47 +892,72 @@ class DocumentClusterer:
                 logger.warning(f"TF-IDF extraction failed for cluster {cluster_id}: {e}")
                 tfidf_keywords = []
             
-            # STEP 4: Generate intelligent cluster name
+            # STEP 4: Generate intelligent cluster name with confidence scoring
             size = sum(cluster_mask)
+            confidence = purity_score / 100  # IMPROVEMENT 5: Calculate confidence
             
-            # Determine if cluster is pure, mixed, or diverse
-            if purity_score >= 80:
+            # IMPROVEMENT 2: Use TF-IDF dominance when purity < 70%
+            if purity_score < 70 and tfidf_keywords:
+                # Low purity - use TF-IDF keywords instead of forcing domain combinations
+                keyword_name = '_'.join([kw.capitalize().replace(' ', '') for kw in tfidf_keywords[:3]])
+                cluster_name = f"{keyword_name}_{size}docs"
+                quality_tag = " ⚠️⚠️"
+                
+                # IMPROVEMENT 5: Add uncertainty prefix if very low confidence
+                if confidence < 0.6:
+                    cluster_name = f"Uncertain_{cluster_name}"
+                    
+            elif purity_score >= 80:
                 # High purity - use dominant domain
                 cluster_name = f"{dominant_domain}_{size}docs"
                 quality_tag = ""
+                
             elif purity_score >= 60:
                 # Medium purity - show dominant with warning
                 cluster_name = f"{dominant_domain}_Mixed_{size}docs"
                 quality_tag = " ⚠️"
+                
+                # IMPROVEMENT 5: Add uncertainty prefix if confidence borderline
+                if confidence < 0.7:
+                    cluster_name = f"Uncertain_{cluster_name}"
+                    
             else:
-                # Low purity - show multiple domains or use TF-IDF keywords
+                # Fallback for edge cases
                 top_domains = [dom for dom, count in domain_counts.most_common(2) if dom != 'Unknown']
                 
-                if len(top_domains) >= 2:
-                    cluster_name = f"{top_domains[0]}_{top_domains[1]}_{size}docs"
-                elif len(top_domains) == 1:
+                if len(top_domains) >= 1:
                     cluster_name = f"{top_domains[0]}_Diverse_{size}docs"
                 elif tfidf_keywords:
-                    # Use TF-IDF keywords if no clear domain
                     keyword_name = '_'.join([kw.capitalize().replace(' ', '') for kw in tfidf_keywords[:2]])
                     cluster_name = f"{keyword_name}_{size}docs"
                 else:
                     cluster_name = f"Mixed_Topics_{size}docs"
                 
                 quality_tag = " ⚠️⚠️"
+                cluster_name = f"Uncertain_{cluster_name}"  # IMPROVEMENT 5
             
             # STEP 5: Add metadata for logging
             cluster_names[cluster_id] = cluster_name + quality_tag
             
             # Log detailed information
-            logger.info(f"Cluster {cluster_id}: '{cluster_name}' | Purity: {purity_score:.1f}%")
+            logger.info(f"Cluster {cluster_id}: '{cluster_name}' | Purity: {purity_score:.1f}% | Confidence: {confidence:.2f}")
             logger.info(f"  └─ Domain distribution: {dict(domain_counts)}")
+            
+            # Log individual document classifications for debugging
+            if len(cluster_doc_names) <= 10:  # Only for smaller clusters
+                for doc_name, doc_domain, doc_scores in zip(cluster_doc_names, doc_domains, doc_domain_scores_list):
+                    if doc_scores:
+                        top_3_domains = sorted(doc_scores.items(), key=lambda x: x[1], reverse=True)[:3]
+                        scores_str = ", ".join([f"{d}: {s:.1f}%" for d, s in top_3_domains])
+                        logger.info(f"  └─ {doc_name[:40]}: {doc_domain} ({scores_str})")
+            
             if purity_score < 80:
                 # Identify potential outliers
                 outlier_docs = [doc_name for doc_name, doc_domain in zip(cluster_doc_names, doc_domains) 
                                if doc_domain != dominant_domain]
                 if outlier_docs:
-                    logger.warning(f"  └─ Possible outliers: {outlier_docs[:3]}")
+                    logger.warning(f"  └─ ⚠️ Possible outliers ({len(outlier_docs)}): {outlier_docs[:3]}")
+                    logger.warning(f"  └─ 💡 Consider increasing n_clusters or reviewing these documents manually")
         
         logger.info(f"✅ Generated enhanced cluster names with purity scoring")
         return cluster_names

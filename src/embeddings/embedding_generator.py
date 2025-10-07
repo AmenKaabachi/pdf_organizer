@@ -162,8 +162,9 @@ class EmbeddingGenerator:
         
         for doc in documents:
             if doc.get('success', False) and doc.get(text_field):
-                # Use first 512 words to avoid token limits
-                text = ' '.join(doc[text_field].split()[:512])
+                # Use first 2000 words to capture more specialized content
+                # This includes intro + body content where domain-specific terms appear
+                text = ' '.join(doc[text_field].split()[:2000])
                 if len(text.strip()) > 0:
                     texts.append(text)
                     filenames.append(doc.get('filename', 'unknown'))
