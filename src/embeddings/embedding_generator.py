@@ -1,130 +1,246 @@
 """
-Document embedding generation using Sentence-BERT models.
+Document embedding generation using hybrid API/Local approach.
 
 This module provides functionality to generate semantic embeddings from text content,
-supporting various pre-trained models and batch processing capabilities.
+using APIs for models with free tiers and local downloads for models without free APIs.
 """
 
 import numpy as np
-from sentence_transformers import SentenceTransformer
+import requests
+import json
 from typing import List, Dict, Optional, Tuple, Union
 import logging
 from pathlib import Path
-import pickle
-import torch
+import time
+import os
+from dataclasses import dataclass
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Try to import sentence-transformers for local models
+try:
+    from sentence_transformers import SentenceTransformer
+    import torch
+    import pickle
+    LOCAL_MODELS_AVAILABLE = True
+except ImportError:
+    LOCAL_MODELS_AVAILABLE = False
+    logger.warning("⚠️ sentence-transformers not available. Local models will be disabled.")
+
+@dataclass
+class APIConfig:
+    """Configuration for API providers."""
+    name: str
+    base_url: str
+    api_key_env: str
+    max_tokens: int
+    embedding_size: int
+    cost_per_1k: float  # USD per 1K tokens
 
 class EmbeddingGenerator:
-    """Generates semantic embeddings using Sentence-BERT models."""
+    """Generates semantic embeddings using hybrid API/Local approach."""
     
-    # Available pre-trained models
+    # Available models - APIs for free options, local downloads for others
     AVAILABLE_MODELS = {
-        # === ENGLISH-ONLY MODELS ===
-        'all-MiniLM-L6-v2': {
+        # === FREE API MODELS (NO DOWNLOADS NEEDED) ===
+        'free-hf-all-MiniLM-L6-v2': {
+            'provider': 'huggingface_free',
             'size': 384,
-            'description': 'Fast and efficient, good balance of speed and quality (English)',
-            'best_for': 'General purpose, large English datasets',
-            'languages': 'English'
+            'description': '🆓 FREE HuggingFace API - No downloads, no API key needed',
+            'best_for': 'Testing, small datasets, no setup required',
+            'languages': 'English',
+            'cost_per_1k_tokens': 0.0,  # FREE!
+            'api_key_env': None,
+            'uses_local': False
+        },
+        'free-hf-paraphrase-multilingual-mpnet-base-v2': {
+            'provider': 'huggingface_free',
+            'size': 768,
+            'description': '� FREE Multilingual HuggingFace API - No downloads needed',
+            'best_for': 'Multilingual testing, no setup required',
+            'languages': '50+ languages',
+            'cost_per_1k_tokens': 0.0,  # FREE!
+            'api_key_env': None,
+            'uses_local': False
+        },
+        
+        # === RECOMMENDED: SMALL LOCAL MODELS (FAST DOWNLOADS) ===
+        'all-MiniLM-L6-v2': {
+            'provider': 'local',
+            'size': 384,
+            'description': 'RECOMMENDED: Fast and efficient (80MB download)',
+            'best_for': 'Default choice - reliable offline processing',
+            'languages': 'English',
+            'download_size': '80MB',
+            'uses_local': True
         },
         'all-mpnet-base-v2': {
+            'provider': 'local',
             'size': 768,
-            'description': 'High quality embeddings, slower but more accurate (English)',
+            'description': 'Local: High quality embeddings (420MB download)',
             'best_for': 'High accuracy requirements for English documents',
-            'languages': 'English'
+            'languages': 'English',
+            'download_size': '420MB',
+            'uses_local': True
         },
         'all-distilroberta-v1': {
+            'provider': 'local',
             'size': 768,
-            'description': 'Good balance of speed and accuracy (English)',
+            'description': '💾 Local: Good balance of speed and accuracy (290MB download)',
             'best_for': 'Medium-sized English datasets',
-            'languages': 'English'
+            'languages': 'English',
+            'download_size': '290MB',
+            'uses_local': True
         },
         
-        # === TOP 3 MULTILINGUAL MODELS (BEST QUALITY) ===
+        # === TOP MULTILINGUAL MODELS (LOCAL DOWNLOADS) ===
         'BAAI/bge-m3': {
+            'provider': 'local',
             'size': 1024,
-            'description': '🏆 State-of-the-art multilingual model (100+ languages) - BEST OVERALL',
+            'description': '�🏆 Local: State-of-the-art multilingual (2.27GB download) - BEST OVERALL',
             'best_for': 'Highest quality multilingual clustering, cross-lingual search',
-            'languages': '100+ languages including Arabic, Chinese, French, German, Spanish, Japanese, Russian, Korean, etc.'
+            'languages': '100+ languages including Arabic, Chinese, French, German, Spanish, Japanese, Russian, Korean, etc.',
+            'download_size': '2.27GB',
+            'uses_local': True
         },
         'intfloat/multilingual-e5-large': {
+            'provider': 'local',
             'size': 1024,
-            'description': '🥇 Exceptional multilingual model (100+ languages) - HIGHEST ACCURACY',
+            'description': '💾🥇 Local: Exceptional multilingual (2.24GB download) - HIGHEST ACCURACY',
             'best_for': 'Maximum quality for diverse multilingual documents',
-            'languages': '100+ languages including Arabic, Chinese, French, German, Spanish, Japanese, Russian, Korean, etc.'
+            'languages': '100+ languages including Arabic, Chinese, French, German, Spanish, Japanese, Russian, Korean, etc.',
+            'download_size': '2.24GB',
+            'uses_local': True
         },
         'paraphrase-multilingual-mpnet-base-v2': {
+            'provider': 'local',
             'size': 768,
-            'description': '🥈 High-quality multilingual model (50+ languages) - BEST BALANCE',
+            'description': '💾🥈 Local: High-quality multilingual (1.11GB download) - BEST BALANCE',
             'best_for': 'Fast processing with excellent multilingual quality',
-            'languages': '50+ languages including Arabic, Chinese, French, German, Spanish, Japanese, Russian, etc.'
+            'languages': '50+ languages including Arabic, Chinese, French, German, Spanish, Japanese, Russian, etc.',
+            'download_size': '1.11GB',
+            'uses_local': True
         },
-        
-        # === ADDITIONAL MULTILINGUAL OPTIONS ===
         'paraphrase-multilingual-MiniLM-L12-v2': {
+            'provider': 'local',
             'size': 384,
-            'description': 'Fast multilingual model - 50+ languages',
+            'description': '💾 Local: Fast multilingual (420MB download)',
             'best_for': 'Large multilingual datasets where speed is critical',
-            'languages': '50+ languages including Arabic, English, French, German, Spanish, Chinese, Japanese, Russian'
+            'languages': '50+ languages including Arabic, English, French, German, Spanish, Chinese, Japanese, Russian',
+            'download_size': '420MB',
+            'uses_local': True
         },
         'sentence-transformers/distiluse-base-multilingual-cased-v2': {
+            'provider': 'local',
             'size': 512,
-            'description': 'Balanced multilingual model - 15+ major languages',
+            'description': '💾 Local: Balanced multilingual (540MB download)',
             'best_for': 'Multilingual semantic similarity with good speed',
-            'languages': '15+ languages including Arabic, English, French, German, Spanish, Italian, Dutch, Polish, Turkish, Chinese'
+            'languages': '15+ languages including Arabic, English, French, German, Spanish, Italian, Dutch, Polish, Turkish, Chinese',
+            'download_size': '540MB',
+            'uses_local': True
+        },
+        
+        # === BACKUP: FREE API MODELS (MAY BE UNRELIABLE) ===
+        'free-hf-all-MiniLM-L6-v2': {
+            'provider': 'huggingface_free',
+            'size': 384,
+            'description': 'BACKUP: FREE HuggingFace API - May have access restrictions',
+            'best_for': 'Backup option if local models fail',
+            'languages': 'English',
+            'cost_per_1k_tokens': 0.0,  # FREE!
+            'api_key_env': None,
+            'uses_local': False
+        },
+        'free-hf-paraphrase-multilingual-mpnet-base-v2': {
+            'provider': 'huggingface_free',
+            'size': 768,
+            'description': 'BACKUP: FREE Multilingual HuggingFace API - May be unreliable',
+            'best_for': 'Backup multilingual option',
+            'languages': '50+ languages',
+            'cost_per_1k_tokens': 0.0,  # FREE!
+            'api_key_env': None,
+            'uses_local': False
         }
     }
     
-    def __init__(self, 
-                 model_name: str = 'all-MiniLM-L6-v2',
-                 device: Optional[str] = None,
-                 cache_embeddings: bool = True,
-                 cache_dir: str = './cache/embeddings'):
+    def __init__(self, model_name: str = 'all-MiniLM-L6-v2', 
+                 device: Optional[str] = None, cache_embeddings: bool = True):
         """
-        Initialize embedding generator.
+        Initialize the hybrid embedding generator.
         
         Args:
-            model_name: Name of the Sentence-BERT model to use
-            device: Device to run model on ('cuda', 'cpu', or None for auto)
-            cache_embeddings: Whether to cache generated embeddings
-            cache_dir: Directory to store cached embeddings
+            model_name: Name of the model to use (API or local)
+            device: Device for local models ('cuda', 'cpu', or None for auto)
+            cache_embeddings: Whether to cache embeddings (recommended)
         """
         self.model_name = model_name
         self.cache_embeddings = cache_embeddings
-        self.cache_dir = Path(cache_dir)
+        self.cache_dir = Path("cache/embeddings") if cache_embeddings else None
         
-        # Create cache directory
         if self.cache_embeddings:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
         
-        # Set device
-        if device is None:
-            self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        # Validate model
+        if model_name not in self.AVAILABLE_MODELS:
+            available = list(self.AVAILABLE_MODELS.keys())
+            raise ValueError(f"Model '{model_name}' not available. Choose from: {available}")
+        
+        self.model_config = self.AVAILABLE_MODELS[model_name]
+        self.provider = self.model_config['provider']
+        self.uses_local = self.model_config.get('uses_local', False)
+        
+        # Initialize based on provider type
+        if self.uses_local:
+            # LOCAL MODEL SETUP
+            if not LOCAL_MODELS_AVAILABLE:
+                raise ImportError(
+                    f"Local model '{model_name}' requires sentence-transformers. "
+                    f"Install with: pip install sentence-transformers"
+                )
+            
+            # Set device for local models
+            if device is None:
+                self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            else:
+                self.device = device
+            
+            logger.info(f"💾 Using LOCAL model: {model_name}")
+            logger.info(f"📱 Device: {self.device}")
+            logger.info(f"📦 Download size: {self.model_config.get('download_size', 'Unknown')}")
+            
+            # Load local model
+            self._load_local_model()
+            
         else:
-            self.device = device
-        
-        logger.info(f"Using device: {self.device}")
-        
-        # Load model
-        self._load_model()
+            # API MODEL SETUP
+            self.api_key = None
+            api_key_env = self.model_config.get('api_key_env')
+            if api_key_env:
+                self.api_key = os.getenv(api_key_env)
+                if not self.api_key:
+                    logger.warning(f"⚠️ API key not found in environment variable '{api_key_env}'. "
+                                 f"Set it with: export {api_key_env}=your_api_key")
+            
+            logger.info(f"🌐 Using API model: {model_name}")
+            if 'cost_per_1k_tokens' in self.model_config:
+                logger.info(f"💰 Cost: ${self.model_config['cost_per_1k_tokens']:.4f} per 1K tokens")
+            else:
+                logger.info(f"💰 Cost: FREE!")
     
-    def _load_model(self):
-        """Load the Sentence-BERT model."""
+    def _load_local_model(self):
+        """Load the Sentence-BERT model for local inference."""
         try:
-            logger.info(f"Loading model: {self.model_name}")
+            logger.info(f"Loading local model: {self.model_name}")
             self.model = SentenceTransformer(self.model_name, device=self.device)
             self.embedding_size = self.model.get_sentence_embedding_dimension()
-            logger.info(f"Model loaded successfully. Embedding size: {self.embedding_size}")
+            logger.info(f"✅ Local model loaded successfully. Embedding size: {self.embedding_size}")
         except Exception as e:
-            logger.error(f"Failed to load model {self.model_name}: {str(e)}")
+            logger.error(f"❌ Failed to load local model {self.model_name}: {str(e)}")
             raise
     
-    def generate_embeddings(self, 
-                          texts: Union[str, List[str]], 
-                          batch_size: int = 32,
+    def generate_embeddings(self, texts: Union[str, List[str]], batch_size: int = 32, 
                           show_progress: bool = True) -> np.ndarray:
         """
         Generate embeddings for text(s).
@@ -135,7 +251,7 @@ class EmbeddingGenerator:
             show_progress: Whether to show progress bar
             
         Returns:
-            NumPy array of embeddings
+            numpy array of embeddings, shape (n_texts, embedding_dim)
         """
         # Handle single text input
         if isinstance(texts, str):
@@ -145,14 +261,29 @@ class EmbeddingGenerator:
             return np.array([])
         
         # Check cache first
+        cache_key = self._get_cache_key(texts)
         if self.cache_embeddings:
-            cached_embeddings = self._load_from_cache(texts)
+            cached_embeddings = self._load_from_cache(cache_key)
             if cached_embeddings is not None:
-                logger.info("Loaded embeddings from cache")
+                logger.info(f"📦 Loaded {len(texts)} embeddings from cache")
                 return cached_embeddings
         
+        # Generate using appropriate method
+        if self.uses_local:
+            embeddings = self._generate_local_embeddings(texts, batch_size, show_progress)
+        else:
+            embeddings = self._generate_api_embeddings(texts, batch_size, show_progress)
+        
+        # Cache results
+        if self.cache_embeddings:
+            self._save_to_cache(cache_key, embeddings)
+        
+        return embeddings
+    
+    def _generate_local_embeddings(self, texts: List[str], batch_size: int, show_progress: bool) -> np.ndarray:
+        """Generate embeddings using local model."""
         try:
-            logger.info(f"Generating embeddings for {len(texts)} documents...")
+            logger.info(f"💾 Generating {len(texts)} embeddings locally...")
             
             # Generate embeddings in batches
             embeddings = self.model.encode(
@@ -163,53 +294,307 @@ class EmbeddingGenerator:
                 normalize_embeddings=True  # L2 normalize for better similarity computation
             )
             
-            # Cache embeddings
-            if self.cache_embeddings:
-                self._save_to_cache(texts, embeddings)
-            
-            logger.info(f"Generated embeddings shape: {embeddings.shape}")
+            logger.info(f"✅ Generated local embeddings shape: {embeddings.shape}")
             return embeddings
             
         except Exception as e:
-            logger.error(f"Error generating embeddings: {str(e)}")
+            logger.error(f"❌ Error generating local embeddings: {str(e)}")
             raise
     
-    def generate_document_embeddings(self, 
-                                   documents: List[Dict[str, any]], 
-                                   text_field: str = 'full_text',
-                                   **kwargs) -> Tuple[np.ndarray, List[str]]:
+    def _generate_api_embeddings(self, texts: List[str], batch_size: int, show_progress: bool) -> np.ndarray:
+        """Generate embeddings using API."""
+        logger.info(f"🌐 Generating {len(texts)} embeddings via {self.provider.upper()} API...")
+        
+        # Process in batches
+        all_embeddings = []
+        total_tokens = 0
+        
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i:i + batch_size]
+            
+            if show_progress:
+                progress = (i + len(batch)) / len(texts) * 100
+                print(f"API Progress: {progress:.1f}% ({i + len(batch)}/{len(texts)})")
+            
+            # Get embeddings for this batch
+            batch_embeddings, batch_tokens = self._call_api(batch)
+            all_embeddings.extend(batch_embeddings)
+            total_tokens += batch_tokens
+            
+            # Small delay to respect rate limits
+            time.sleep(0.1)
+        
+        embeddings = np.array(all_embeddings)
+        
+        # Log cost information
+        if 'cost_per_1k_tokens' in self.model_config:
+            cost = (total_tokens / 1000) * self.model_config['cost_per_1k_tokens']
+            logger.info(f"💰 Tokens used: {total_tokens:,} (≈${cost:.4f})")
+        else:
+            logger.info(f"💰 Tokens used: {total_tokens:,} (FREE!)")
+        
+        logger.info(f"✅ Generated API embeddings shape: {embeddings.shape}")
+        return embeddings
+    
+    def _call_api(self, texts: List[str]) -> Tuple[List[List[float]], int]:
+        """Call the appropriate API based on provider."""
+        if self.provider == 'openai':
+            return self._call_openai_api(texts)
+        elif self.provider == 'cohere':
+            return self._call_cohere_api(texts)
+        elif self.provider == 'huggingface':
+            return self._call_huggingface_api(texts)
+        elif self.provider == 'huggingface_free':
+            return self._call_huggingface_free_api(texts)
+        else:
+            raise ValueError(f"Unknown provider: {self.provider}")
+    
+    def _call_openai_api(self, texts: List[str]) -> Tuple[List[List[float]], int]:
+        """Call OpenAI Embeddings API."""
+        import openai
+        
+        openai.api_key = self.api_key
+        
+        # Map model names
+        model_map = {
+            'openai-text-embedding-3-small': 'text-embedding-3-small',
+            'openai-text-embedding-3-large': 'text-embedding-3-large'
+        }
+        
+        model_id = model_map[self.model_name]
+        
+        try:
+            response = openai.embeddings.create(
+                input=texts,
+                model=model_id
+            )
+            
+            embeddings = [item.embedding for item in response.data]
+            tokens = response.usage.total_tokens
+            
+            return embeddings, tokens
+            
+        except Exception as e:
+            logger.error(f"❌ OpenAI API error: {e}")
+            raise
+    
+    def _call_cohere_api(self, texts: List[str]) -> Tuple[List[List[float]], int]:
+        """Call Cohere Embeddings API."""
+        url = "https://api.cohere.ai/v1/embed"
+        
+        # Map model names
+        model_map = {
+            'cohere-embed-multilingual-v3': 'embed-multilingual-v3.0',
+            'cohere-embed-english-v3': 'embed-english-v3.0'
+        }
+        
+        model_id = model_map[self.model_name]
+        
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        data = {
+            "texts": texts,
+            "model": model_id,
+            "input_type": "search_document"
+        }
+        
+        try:
+            response = requests.post(url, headers=headers, json=data)
+            response.raise_for_status()
+            
+            result = response.json()
+            embeddings = result["embeddings"]
+            
+            # Approximate token count
+            tokens = sum(len(text.split()) for text in texts)
+            
+            return embeddings, tokens
+            
+        except Exception as e:
+            logger.error(f"❌ Cohere API error: {e}")
+            raise
+    
+    def _call_huggingface_api(self, texts: List[str]) -> Tuple[List[List[float]], int]:
+        """Call HuggingFace Inference API (paid)."""
+        # Extract model ID from our model name
+        model_id = self.model_name.replace('hf-', '')
+        
+        url = f"https://api-inference.huggingface.co/models/{model_id}"
+        
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        data = {
+            "inputs": texts,
+            "options": {"wait_for_model": True}
+        }
+        
+        try:
+            response = requests.post(url, headers=headers, json=data)
+            response.raise_for_status()
+            
+            embeddings = response.json()
+            
+            # Approximate token count
+            tokens = sum(len(text.split()) for text in texts)
+            
+            return embeddings, tokens
+            
+        except Exception as e:
+            logger.error(f"❌ HuggingFace API error: {e}")
+            raise
+    
+    def _call_huggingface_free_api(self, texts: List[str]) -> Tuple[List[List[float]], int]:
+        """Call HuggingFace Inference API (free tier)."""
+        # Map our model names to HuggingFace model IDs
+        model_map = {
+            'free-hf-all-MiniLM-L6-v2': 'sentence-transformers/all-MiniLM-L6-v2',
+            'free-hf-paraphrase-multilingual-mpnet-base-v2': 'sentence-transformers/paraphrase-multilingual-mpnet-base-v2'
+        }
+        
+        model_id = model_map.get(self.model_name, 'sentence-transformers/all-MiniLM-L6-v2')
+        url = f"https://api-inference.huggingface.co/models/{model_id}"
+        
+        headers = {"Content-Type": "application/json"}
+        data = {"inputs": texts}
+        
+        try:
+            response = requests.post(url, headers=headers, json=data)
+            
+            if response.status_code == 401:
+                # Try with minimal rate limiting for public access
+                logger.warning("⚠️ HuggingFace API returned 401. This may be due to rate limits or policy changes.")
+                logger.info("💡 Consider using local models instead. They work offline and have no API restrictions.")
+                raise Exception(f"HuggingFace Free API access denied. Use local models instead.")
+            
+            if response.status_code == 503:
+                logger.info("⏳ Model loading, waiting 20 seconds...")
+                time.sleep(20)
+                response = requests.post(url, headers=headers, json=data)
+            
+            response.raise_for_status()
+            embeddings = response.json()
+            
+            # Validate response format
+            if not isinstance(embeddings, list) or not embeddings:
+                raise ValueError("Invalid response format from HuggingFace API")
+            
+            # Approximate token count
+            tokens = sum(len(text.split()) for text in texts)
+            
+            return embeddings, tokens
+            
+        except Exception as e:
+            logger.error(f"❌ HuggingFace Free API error: {e}")
+            logger.info("💡 Suggestion: Use local models for reliable offline access")
+            raise
+    
+    def _get_cache_key(self, texts: List[str]) -> str:
+        """Generate cache key for texts."""
+        import hashlib
+        content = f"{self.model_name}:{':'.join(texts)}"
+        return hashlib.md5(content.encode()).hexdigest()
+    
+    def _load_from_cache(self, cache_key: str) -> Optional[np.ndarray]:
+        """Load embeddings from cache."""
+        if self.uses_local:
+            # Use pickle format for local models (backward compatibility)
+            cache_file = self.cache_dir / f"{cache_key}.pkl"
+            if cache_file.exists():
+                try:
+                    with open(cache_file, 'rb') as f:
+                        return pickle.load(f)
+                except Exception as e:
+                    logger.warning(f"Failed to load local cache: {e}")
+        else:
+            # Use numpy format for API models
+            cache_file = self.cache_dir / f"{cache_key}.npy"
+            if cache_file.exists():
+                try:
+                    return np.load(cache_file)
+                except Exception as e:
+                    logger.warning(f"Failed to load API cache: {e}")
+        return None
+    
+    def _save_to_cache(self, cache_key: str, embeddings: np.ndarray):
+        """Save embeddings to cache."""
+        try:
+            if self.uses_local:
+                # Use pickle format for local models (backward compatibility)
+                cache_file = self.cache_dir / f"{cache_key}.pkl"
+                with open(cache_file, 'wb') as f:
+                    pickle.dump(embeddings, f)
+                logger.debug(f"Saved local embeddings to cache: {cache_file}")
+            else:
+                # Use numpy format for API models
+                cache_file = self.cache_dir / f"{cache_key}.npy"
+                np.save(cache_file, embeddings)
+                logger.debug(f"Saved API embeddings to cache: {cache_file}")
+        except Exception as e:
+            logger.warning(f"Failed to save cache: {e}")
+    
+    def generate_document_embeddings(self, extraction_results: List[Dict], 
+                                   batch_size: int = 16, show_progress: bool = True) -> Tuple[np.ndarray, List[str]]:
         """
-        Generate embeddings for a list of document dictionaries.
+        Generate embeddings for extracted document results.
         
         Args:
-            documents: List of document dictionaries from PDF extraction
-            text_field: Field name containing text content
-            **kwargs: Additional arguments for generate_embeddings
+            extraction_results: List of PDF extraction results (or documents list)
+            batch_size: Batch size for processing
+            show_progress: Whether to show progress
             
         Returns:
-            Tuple of (embeddings array, list of document filenames)
+            Tuple of (embeddings array, document names list)
         """
-        # Extract texts and filenames
+        # Extract texts and names
         texts = []
-        filenames = []
+        document_names = []
         
-        for doc in documents:
-            if doc.get('success', False) and doc.get(text_field):
-                # Use first 2000 words to capture more specialized content
-                # This includes intro + body content where domain-specific terms appear
-                text = ' '.join(doc[text_field].split()[:2000])
+        for result in extraction_results:
+            # Handle both old format (extraction_results) and new format (documents)
+            if isinstance(result, dict):
+                if result.get('success', False) and result.get('full_text'):
+                    # Old extraction format
+                    text = result['full_text']
+                    filename = result['filename']
+                elif result.get('full_text'):
+                    # New document format
+                    text = result['full_text']
+                    filename = result.get('filename', 'unknown')
+                else:
+                    continue
+                
+                # Limit text length - more for local models, less for APIs
+                words = text.split()
+                if self.uses_local:
+                    # Local models can handle more text (first 2000 words)
+                    max_words = 2000
+                else:
+                    # API models should use less to avoid costs (first 1500 words)
+                    max_words = 1500
+                
+                if len(words) > max_words:
+                    text = ' '.join(words[:max_words])
+                
                 if len(text.strip()) > 0:
                     texts.append(text)
-                    filenames.append(doc.get('filename', 'unknown'))
+                    document_names.append(filename)
         
         if not texts:
             logger.warning("No valid texts found for embedding generation")
             return np.array([]), []
         
         logger.info(f"Generating embeddings for {len(texts)} valid documents")
-        embeddings = self.generate_embeddings(texts, **kwargs)
         
-        return embeddings, filenames
+        # Generate embeddings
+        embeddings = self.generate_embeddings(texts, batch_size, show_progress)
+        
+        return embeddings, document_names
     
     def compute_similarity_matrix(self, embeddings: np.ndarray) -> np.ndarray:
         """
@@ -224,13 +609,23 @@ class EmbeddingGenerator:
         if embeddings.size == 0:
             return np.array([])
         
-        # Compute cosine similarity (dot product for normalized vectors)
-        similarity_matrix = np.dot(embeddings, embeddings.T)
-        
-        # Ensure diagonal is 1.0 (account for floating point errors)
-        np.fill_diagonal(similarity_matrix, 1.0)
-        
-        return similarity_matrix
+        try:
+            from sklearn.metrics.pairwise import cosine_similarity
+            return cosine_similarity(embeddings)
+        except ImportError:
+            # Fallback: manual cosine similarity computation
+            # Normalize embeddings if not already normalized
+            norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+            norms[norms == 0] = 1  # Avoid division by zero
+            normalized_embeddings = embeddings / norms
+            
+            # Compute cosine similarity (dot product for normalized vectors)
+            similarity_matrix = np.dot(normalized_embeddings, normalized_embeddings.T)
+            
+            # Ensure diagonal is 1.0 (account for floating point errors)
+            np.fill_diagonal(similarity_matrix, 1.0)
+            
+            return similarity_matrix
     
     def find_most_similar(self, 
                          query_text: str, 
@@ -265,57 +660,27 @@ class EmbeddingGenerator:
         
         return results
     
-    def _generate_cache_key(self, texts: List[str]) -> str:
-        """Generate cache key for texts."""
-        import hashlib
-        
-        # Create hash from model name and texts
-        content = f"{self.model_name}_{str(texts)}"
-        return hashlib.md5(content.encode()).hexdigest()
-    
-    def _load_from_cache(self, texts: List[str]) -> Optional[np.ndarray]:
-        """Load embeddings from cache if available."""
-        try:
-            cache_key = self._generate_cache_key(texts)
-            cache_file = self.cache_dir / f"{cache_key}.pkl"
-            
-            if cache_file.exists():
-                with open(cache_file, 'rb') as f:
-                    return pickle.load(f)
-        except Exception as e:
-            logger.warning(f"Could not load from cache: {str(e)}")
-        
-        return None
-    
-    def _save_to_cache(self, texts: List[str], embeddings: np.ndarray):
-        """Save embeddings to cache."""
-        try:
-            cache_key = self._generate_cache_key(texts)
-            cache_file = self.cache_dir / f"{cache_key}.pkl"
-            
-            with open(cache_file, 'wb') as f:
-                pickle.dump(embeddings, f)
-                
-            logger.debug(f"Saved embeddings to cache: {cache_file}")
-        except Exception as e:
-            logger.warning(f"Could not save to cache: {str(e)}")
-    
-    def get_model_info(self) -> Dict[str, any]:
+    def get_model_info(self) -> Dict:
         """Get information about the current model."""
-        model_info = self.AVAILABLE_MODELS.get(self.model_name, {})
-        return {
-            'model_name': self.model_name,
-            'embedding_size': self.embedding_size,
-            'device': self.device,
-            **model_info
-        }
+        model_info = self.model_config.copy()
+        
+        # Add runtime info
+        if self.uses_local and hasattr(self, 'model'):
+            model_info.update({
+                'model_name': self.model_name,
+                'embedding_size': getattr(self, 'embedding_size', self.model_config.get('size', 'Unknown')),
+                'device': getattr(self, 'device', 'Unknown')
+            })
+        
+        return model_info
     
     @classmethod
-    def list_available_models(cls) -> Dict[str, Dict[str, any]]:
-        """List all available pre-trained models."""
-        return cls.AVAILABLE_MODELS
+    def list_available_models(cls) -> Dict:
+        """List all available models."""
+        return cls.AVAILABLE_MODELS.copy()
 
 
+# Convenience function for backward compatibility
 def generate_embeddings(texts: Union[str, List[str]], 
                        model_name: str = 'all-MiniLM-L6-v2',
                        **kwargs) -> np.ndarray:

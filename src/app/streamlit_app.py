@@ -117,25 +117,63 @@ def main():
         english_models = [name for name, info in available_models.items() if info.get('languages', '').startswith('English')]
         multilingual_models = [name for name, info in available_models.items() if 'languages' in info and not info['languages'].startswith('English')]
         
-        # Default to BAAI/bge-m3 (state-of-the-art multilingual model)
-        default_model = 'BAAI/bge-m3'
+        # Default to all-MiniLM-L6-v2 (recommended reliable model)
+        default_model = 'all-MiniLM-L6-v2'
         default_index = model_options.index(default_model) if default_model in model_options else 0
+        
+        def format_model_name(i):
+            model_name = model_options[i]
+            model_info = available_models[model_name]
+            
+            # Determine prefix
+            if model_name in multilingual_models:
+                lang_prefix = "🌍 [Multi]"
+            else:
+                lang_prefix = "[EN]"
+            
+            # Determine type prefix
+            if model_info.get('uses_local', True):
+                type_prefix = "💾"  # Local download
+                size_info = f" ({model_info.get('download_size', 'Unknown')})"
+            else:
+                type_prefix = "🌐"  # API
+                if model_info.get('cost_per_1k_tokens', 0) == 0:
+                    size_info = " (FREE API)"
+                else:
+                    size_info = f" (${model_info.get('cost_per_1k_tokens', 0):.3f}/1K)"
+            
+            return f"{type_prefix} {lang_prefix} {model_name}{size_info}"
         
         selected_model_index = st.selectbox(
             "Choose AI Model",
             range(len(model_options)),
-            index=default_index,  # Default to multilingual model
-            format_func=lambda i: f"{'🌍 [Multi]' if model_options[i] in multilingual_models else '[EN]'} {model_options[i]}",
-            help="Select the Sentence-BERT model. 🌍 = Multilingual (50+ languages), [EN] = English only"
+            index=default_index,  # Default to recommended model
+            format_func=format_model_name,
+            help="💾 = Local download (reliable, offline) | 🌐 = API (requires internet) | 🌍 = Multilingual | [EN] = English only"
         )
         selected_model = model_options[selected_model_index]
         
-        # Show model info with language support highlighted
+        # Show model info with type and language support highlighted
         with st.expander("ℹ️ Model Information"):
             model_info = available_models[selected_model]
             st.write(f"**Description:** {model_info['description']}")
             st.write(f"**Embedding Size:** {model_info['size']}")
             st.write(f"**Best For:** {model_info['best_for']}")
+            
+            # Show processing type
+            if model_info.get('uses_local', True):
+                st.info(f"💾 **Type:** Local processing (download: {model_info.get('download_size', 'Unknown')})")
+                st.write("• ✅ Works offline")
+                st.write("• ✅ No API restrictions") 
+                st.write("• ⚡ Fast after first download")
+            else:
+                cost = model_info.get('cost_per_1k_tokens', 0)
+                if cost == 0:
+                    st.success(f"🌐 **Type:** FREE API (no cost)")
+                else:
+                    st.warning(f"🌐 **Type:** Paid API (${cost:.3f} per 1K tokens)")
+                st.write("• ⚠️ Requires internet connection")
+                st.write("• ⚠️ May have rate limits")
             
             # Highlight language support
             if 'languages' in model_info:
@@ -144,11 +182,24 @@ def main():
                 else:
                     st.success(f"🌍 **Languages:** {model_info['languages']}")
         
-        # Show language support summary
+        # Show processing type summary
+        model_info = available_models[selected_model]
+        if model_info.get('uses_local', True):
+            if selected_model in multilingual_models:
+                st.success("✅ Local multilingual model - works offline with documents in any language!")
+            else:
+                st.info("💾 Local English model - reliable offline processing for English documents")
+        else:
+            if model_info.get('cost_per_1k_tokens', 0) == 0:
+                st.success("🌐 FREE API model - no cost but requires internet connection")
+            else:
+                st.warning("💰 Paid API model - check costs before use")
+        
+        # Language support summary
         if selected_model in multilingual_models:
             st.success("✅ Multilingual model selected - works with documents in any language!")
         else:
-            st.info("ℹ️ English-only model selected")
+            st.info("📝 English-only model selected - works with English documents")
         
         st.markdown("---")
         

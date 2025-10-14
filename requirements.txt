@@ -1,9 +1,20 @@
 # Core dependencies
 PyMuPDF>=1.24.0
-sentence-transformers>=2.2.0
 scikit-learn>=1.3.0
 pandas>=2.1.0
 numpy>=1.24.0
+requests>=2.31.0
+
+# FREE API dependencies (always included for free models)
+# No additional dependencies needed for free HuggingFace API
+
+# PAID API dependencies (optional - only if using paid APIs)
+# openai>=1.3.0  # Uncomment for OpenAI embeddings (costs money)
+# cohere>=4.37.0  # Uncomment for Cohere embeddings (costs money)
+
+# LOCAL MODEL dependencies (optional - for models without free APIs)
+# sentence-transformers>=2.2.0  # Uncomment to use local downloaded models
+# torch>=1.12.0  # Required for sentence-transformers
 
 # Web interface
 streamlit>=1.28.0

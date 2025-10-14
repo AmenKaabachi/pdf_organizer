@@ -36,25 +36,28 @@ def main():
         description="AI-Powered PDF Organizer - Automatically cluster and organize PDF documents"
     )
     
-    # Required arguments
+    # Required arguments (except when listing models)
     parser.add_argument(
         "--input-dir",
-        required=True,
         help="Directory containing PDF files to organize"
     )
     
     parser.add_argument(
-        "--output-dir",
-        required=True,
+        "--output-dir", 
         help="Directory to save organized files"
     )
     
     # Optional arguments
     parser.add_argument(
         "--model",
-        default="all-MiniLM-L6-v2",
-        choices=["all-MiniLM-L6-v2", "all-mpnet-base-v2", "all-distilroberta-v1", "paraphrase-MiniLM-L6-v2"],
-        help="Sentence-BERT model to use for embeddings (default: all-MiniLM-L6-v2)"
+        default="all-MiniLM-L6-v2", 
+        help="Embedding model to use (default: all-MiniLM-L6-v2). Use --list-models to see all options"
+    )
+    
+    parser.add_argument(
+        "--list-models",
+        action="store_true",
+        help="List all available models and exit"
     )
     
     parser.add_argument(
@@ -110,6 +113,26 @@ def main():
     
     args = parser.parse_args()
     
+    # Handle list models request
+    if args.list_models:
+        print("Available Models:")
+        print("=" * 50)
+        models = EmbeddingGenerator.list_available_models()
+        for name, info in models.items():
+            type_icon = "[LOCAL]" if info.get('uses_local', True) else "[API]"
+            lang_icon = "[MULTI]" if not info.get('languages', '').startswith('English') else "[EN]"
+            size_info = info.get('download_size', f"{info.get('size', 'Unknown')} dim")
+            print(f"{type_icon} {lang_icon} {name}")
+            print(f"   {info.get('description', 'No description')}")
+            print(f"   Size: {size_info}")
+            print()
+        return
+    
+    # Validate required arguments for normal operation
+    if not args.input_dir or not args.output_dir:
+        parser.error("--input-dir and --output-dir are required (unless using --list-models)")
+        sys.exit(1)
+    
     # Setup logging
     setup_logging(args.verbose)
     logger = logging.getLogger(__name__)
@@ -146,10 +169,13 @@ def main():
         
         # Step 2: Generate embeddings
         logger.info("🧠 Step 2: Generating semantic embeddings...")
-        # Use larger model for better domain separation in specialized documents
-        # all-mpnet-base-v2 has 768 dimensions (vs 384) for better distinguishing
-        # between Healthcare, Physics, Geography, CS, etc.
-        embedding_generator = EmbeddingGenerator(model_name='all-mpnet-base-v2')
+        # Validate model exists
+        available_models = EmbeddingGenerator.list_available_models()
+        if args.model not in available_models:
+            logger.error(f"Model '{args.model}' not available. Use --list-models to see options.")
+            sys.exit(1)
+        
+        embedding_generator = EmbeddingGenerator(model_name=args.model)
         embeddings, document_names = embedding_generator.generate_document_embeddings(
             valid_documents,
             batch_size=args.batch_size
