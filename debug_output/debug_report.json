@@ -1,0 +1,200 @@
+{
+  "model": "all-mpnet-base-v2",
+  "documents": [
+    {
+      "filename": "2nd_histoire-geographie.pdf",
+      "chars": 0,
+      "words": 0,
+      "sample": ""
+    },
+    {
+      "filename": "ComplexesEXOSCORRIGES.pdf",
+      "chars": 28585,
+      "words": 8939,
+      "sample": "Page 1 18 jgcuaz hotmail.com NOMBRES COMPLEXES - EXERCICES CORRIGES Exercice n 1. On donne 3 3 z i et 1 2 z i Ecrire sous forme algébrique les complexes suivants : 1z z z ; 2z z z ; 2 3z z ; 3 4 z z ; 5 z z z Exercice n 2. 1) Calculer 2 3 , i i et 4i 2) En déduire la valeur de 2006 i et de 2009 i , "
+    },
+    {
+      "filename": "Cours Machine Learning IA - Dr SEBRI.pdf",
+      "chars": 29334,
+      "words": 4110,
+      "sample": "HAL Id: hal-03906387 https: hal.science hal-03906387v1 Submitted on 19 Dec 2022 HAL is a multi-disciplinary open access archive for the deposit and dissemination of sci- entific research documents, whether they are pub- lished or not. The documents may come from teaching and research institutions in"
+    },
+    {
+      "filename": "cours Stat SMI 3.pdf",
+      "chars": 60363,
+      "words": 13281,
+      "sample": "Filière : SMI Semestre 3 Module 18 Cours de Statistique Descriptive Par le Professeur HAKAM Samir Année : 2016 - 2017 Table des matières Introduction . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . iii 1 Distribution statistique 1 1.1 Généralités . . . . . . . ."
+    },
+    {
+      "filename": "Cours-de-physique-1v2.pdf",
+      "chars": 22917,
+      "words": 3994,
+      "sample": "Introduction à la notion de mesure Le ciel et la Terre Lumières et ombres La révolution de la Terre et les saisons Les étoiles et les planètes Phases de la Lune et éclipses Matière Matière et température Changements d état Mélanges, solutions Pression, poussée d Archimède Cours - avec vidéo illustra"
+    },
+    {
+      "filename": "Cours_Biostat_Chapitre1_L2_19_20.pdf",
+      "chars": 12631,
+      "words": 2331,
+      "sample": "1 Chapitre1 Statistique descriptive Statistique descriptive univariée (a une variable) : 1)- Définitions: statistique : la statistique est ensemble des méthodes qui servent à organiser les épreuves fournissant des observations, à analyser celles-ci et à interpréter les résultats. L analyse statistiq"
+    },
+    {
+      "filename": "cours_cepe_intro_ml.pdf",
+      "chars": 327586,
+      "words": 45212,
+      "sample": "Introduction au machine learning L. Rouvière laurent.rouviere univ-rennes2.fr Juin 2021 Présentation Objectifs : comprendre les aspects théoriques et pratiques des algorithmes machine learning de référence. Pré-requis : théorie des probabilités, modélisation statistique, régression (linéaire et logi"
+    },
+    {
+      "filename": "cours_ml_intro.pdf",
+      "chars": 26278,
+      "words": 3961,
+      "sample": "Apprentissage Automatique -- Introduction -- 1 Apprentissage Automatique Introduction Stéphane Herbin stephane.herbin onera.fr Apprentissage Automatique -- Introduction -- 2 Aujourd hui Introduction générale: Exemples, définitions, problématiques, approches, vocabulaire Deux approches élémentaires à"
+    },
+    {
+      "filename": "exercices_analyse.pdf",
+      "chars": 63979,
+      "words": 15591,
+      "sample": "Quelques exercices d analyse corrigés Aimé Lachal Quelques exercices d analyse corrigés Sommaire 1 Outils pour les fonctions 2 Fonctions continues 3 Fonctions dérivables 4 Développements limités 5 Intégration Aimé Lachal Quelques exercices d analyse corrigés 1. Outils pour les fonctions Aimé Lachal "
+    },
+    {
+      "filename": "fondmath1.pdf",
+      "chars": 270159,
+      "words": 57237,
+      "sample": "Laurent Pujo-Menjouet Licence Sciences, Technologies Santé Département de mathématiques Mention mathématiques Université Claude Bernard, Lyon I Portail Math Info 43, boulevard 11 novembre 1918 Portail Math-Eco 69622 Villeurbanne cedex, France pujo math.univ-lyon1.fr Fondamentaux des mathématiques 1 "
+    },
+    {
+      "filename": "GAB-S2-Statistique.pdf",
+      "chars": 55054,
+      "words": 12145,
+      "sample": "1 19 08 2020 Statistique Descriptive Ecole Superieur de Technologie de Laayoune Université Ibn Zohr Agadir 19 08 2020 2 Statistique Descriptive SOMMAIRE Chapitre 1: Introduction à la statistique Chapitre 2: Représentation des données Chapitre 3: Caractéristiques de tendance centrale Chapitre 4: Cara"
+    },
+    {
+      "filename": "IntroML_Azencott.pdf",
+      "chars": 385342,
+      "words": 73130,
+      "sample": "1 Introduction au Machine Learning Chloé-Agathe Azencott Cet ouvrage s adresse aux étudiantes et étudiants en ﬁn de licence et en master d informatique ou de maths appliquées, ainsi qu aux élèves d école d ingénieurs. L apprentissageautomatique,oumachineLearning,estunedisciplinedontlesoutilspuissant"
+    },
+    {
+      "filename": "Machine Learning - Modèles.pdf",
+      "chars": 56837,
+      "words": 8105,
+      "sample": "Intelligence artificielle Frédéric Camps fcamps laas.fr Machine learning, deep learning Agenda Approche du machine learning Apprentissage supervisé: Régression linéaire simple Régression linéaire multiple Equation normale Régression polynomiale Modèles linéaires régularisés Réseau de neurone Machine"
+    },
+    {
+      "filename": "math.pdf",
+      "chars": 323334,
+      "words": 69219,
+      "sample": "Mathématiques : du lycée aux CPGE scientiﬁques Lycées Louis-Le-Grand et Henri-IV Introduction Origine et buts de de document Lorsqu on discute avec des lycéens se destinant aux CPGE scientiﬁques, deux questions re- viennent fréquemment. - Comment un lycéen peut-il se préparer eﬃcacement aux CPGE, ou"
+    },
+    {
+      "filename": "mathematiques_statistiques_-_le_cours-4.pdf",
+      "chars": 6675,
+      "words": 1169,
+      "sample": "Annales, corrigés et résultats du BAC à retrouver sur Studyrama.com Studyrama Tous droits réservés MATHÉMATIQUES TOUTES SÉRIES Statistiques LE COURS FICHE DE RÉVISION DU BAC Note liminaire Programme selon les sections : - pourcentages : toutes sections - étude d une série statistique : S ES L STMG S"
+    },
+    {
+      "filename": "mathh.pdf",
+      "chars": 366886,
+      "words": 86343,
+      "sample": "Facult e des Sciences MATHEMATIQUES GENERALES, F. Bastin EXERCICES DE BASE Premi ere ann ee de bachelier en Biologie, Chimie, G eographie, G eologie, Physique Informatique, Philosophie Ann ee acad emique 2013-2014 Jacqueline CRASBORN Introduction G en eralit es Ce fascicule fournit aux etudiants les"
+    },
+    {
+      "filename": "mathlivre.pdf",
+      "chars": 96056,
+      "words": 23453,
+      "sample": "Cours d Algèbre I et II avec Exercices Dr Imene Medjadj 2018 2019 , 𝒇(𝒙) 𝒇(𝒚) 𝒙 𝒚 𝒙𝓡𝒚 𝒙 𝒚 ( A g Mémoire de fi nd études Présenté par : Medjadj Imene. -U.S.T.O. 2017- Cours d Algèbre I et II Avec Exercices Corrigés الجمهوريــــــــــــــــــــــة الجزائريــ ـــــــــة الديمقراطيـــــــــة الشعبيـــــ"
+    },
+    {
+      "filename": "MGCorrigé2.pdf",
+      "chars": 2429,
+      "words": 476,
+      "sample": "UNIVERSITÉ DE GENÈVE Section de Mathématiques Faculté des sciences 2008 Mathématiques générales (été) Corrigé série 2 Exercice 1. Quantité de lait en g jour produite par des mères fumeur et non-fumeur. Fumeur 621 793 593 545 753 655 895 767 714 598 693 Non-fumeur 947 945 1086 1202 973 981 930 745 90"
+    },
+    {
+      "filename": "ML-Ensimag-IF3A.pdf",
+      "chars": 346889,
+      "words": 61775,
+      "sample": "Principes de l apprentissage statistique supervisé (Supervised Machine Learning) Romain COUILLET Table des matières Chapitre 1. Introduction à l apprentissage machine : passé, présent et futur 5 1.1. Qu est-ce que l apprentissage machine ? 5 1.2. Problème de base et vision d ensemble du cours 6 1.3."
+    },
+    {
+      "filename": "ml.pdf",
+      "chars": 377917,
+      "words": 68714,
+      "sample": "Introduction à l apprentissage automatique Frédéric SUR frederic.sur univ-lorraine.fr https: members.loria.fr FSur Tronc commun scientifique FICM 2A École des Mines de Nancy 2024-2025 Machine Learning Captcha https: xkcd.com 2228 Table des matières À l attention des étudiants FICM 2A 5 1 Introductio"
+    },
+    {
+      "filename": "PolyFML.pdf",
+      "chars": 87198,
+      "words": 18240,
+      "sample": "Fondements du Machine Learning Cl ement W. Royer Notes de cours - L3 IM2D - 2024 2025 La derni ere version de ce document est accessible a l adresse : https: www.lamsade.dauphine.fr croyer ensdocs FML PolyFML.pdf. Pour toute remarque, envoyer un mail a clement.royer lamsade.dauphine.fr. Merci a Thib"
+    },
+    {
+      "filename": "stat.pdf",
+      "chars": 163695,
+      "words": 31891,
+      "sample": "Statistique Descriptive et Calcul de Probabilités Antoine Ayache Julien Hamonier Université de Lille Table des matières 1 Un peu d histoire 2 2 Analyse descriptive univariée 2 2.1 Vocabulaire . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 2 2.2 Représentation graphique"
+    },
+    {
+      "filename": "statprob.pdf",
+      "chars": 113550,
+      "words": 24489,
+      "sample": "Universit e Claude Bernard Lyon 1 IREM de Lyon - D epartement de math ematiques Stage ATSM - Aoˆut 2010 Cours de probabilit es et statistiques A. Perrut contact : Anne.Perrut univ-lyon1.fr Table des mati eres 1 Le mod ele probabiliste 5 1.1 Introduction . . . . . . . . . . . . . . . . . . . . . . . "
+    }
+  ],
+  "cluster_names": {
+    "0": "Complexesexoscorriges_6files",
+    "1": "Machine_7files",
+    "2": "Physique_1files",
+    "3": "Stat_8files"
+  },
+  "clusters": {
+    "0": [
+      "ComplexesEXOSCORRIGES.pdf",
+      "exercices_analyse.pdf",
+      "fondmath1.pdf",
+      "math.pdf",
+      "mathh.pdf",
+      "mathlivre.pdf"
+    ],
+    "1": [
+      "Cours Machine Learning IA - Dr SEBRI.pdf",
+      "IntroML_Azencott.pdf",
+      "ML-Ensimag-IF3A.pdf",
+      "Machine Learning - Modèles.pdf",
+      "PolyFML.pdf",
+      "cours_ml_intro.pdf",
+      "ml.pdf"
+    ],
+    "2": [
+      "Cours-de-physique-1v2.pdf"
+    ],
+    "3": [
+      "Cours_Biostat_Chapitre1_L2_19_20.pdf",
+      "GAB-S2-Statistique.pdf",
+      "MGCorrigé2.pdf",
+      "cours Stat SMI 3.pdf",
+      "cours_cepe_intro_ml.pdf",
+      "mathematiques_statistiques_-_le_cours-4.pdf",
+      "stat.pdf",
+      "statprob.pdf"
+    ]
+  },
+  "clusterer_info": {
+    "algorithm": "kmeans",
+    "n_clusters": 4,
+    "cluster_labels": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "n_documents": 22,
+    "silhouette_score": 0.4090994894504547,
+    "calinski_harabasz_score": 5.572082996368408,
+    "cluster_sizes": [
+      6,
+      7,
+      1,
+      8
+    ]
+  }
+}
